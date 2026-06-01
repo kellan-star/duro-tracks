@@ -1,172 +1,250 @@
-import { getDb } from "./db";
-import { TRACKED_REPS } from "./config";
-import type {
-  AccountAnalysis,
-  AccountDetail,
-  AccountRow,
-  CallRecord,
-  DiscoveryInsights,
-  Kpis,
-  MeddpiccInsights,
-  RepRow,
-  ValueMapInsights,
+import {
+  getAllAccountRows,
+  getAccountRow,
+  getCallsForAccount,
+  getRepTranscriptCounts,
+  getRepAccountDomains,
+  getTotalTranscripts,
+  getLastSyncTimestamp,
+  getAggregateInsight,
+  type AccountRow,
+} from "./db";
+import {
+  type Account,
+  type AccountsTabData,
+  type SalesRepsTabData,
+  type SalesRepSummary,
+  type AccountDiscoveryTabData,
+  type ValueMapTabData,
+  type MeddpiccTabData,
+  type AccountDetailData,
+  type AggregateSection,
+  type Theme,
+  type AccountDiscovery,
+  type ValueMap,
+  type Meddpicc,
+  type CallRecord,
+  TRACKED_REPS,
+  EMPTY_ACCOUNT_DISCOVERY,
+  EMPTY_VALUE_MAP,
+  EMPTY_MEDDPICC,
+  ACCOUNT_DISCOVERY_KEYS,
+  ACCOUNT_DISCOVERY_LABELS,
+  VALUE_MAP_APP_KEYS,
+  VALUE_MAP_APP_LABELS,
+  VALUE_MAP_COLUMN_KEYS,
+  MEDDPICC_KEYS,
+  MEDDPICC_LABELS,
+  accountDiscoveryScore,
+  valueMapScore,
+  meddpiccScore,
 } from "./types";
 
-interface AccountDbRow {
-  domain: string;
-  company: string;
-  lead_rep: string | null;
-  call_count: number;
-  transcript_count: number;
-  last_call: string | null;
-  discovery_score: number | null;
-  value_map_score: number | null;
-  meddpicc_score: number | null;
+function parseJson<T>(json: string | null, fallback: T): T {
+  if (!json) return fallback;
+  try {
+    return JSON.parse(json) as T;
+  } catch {
+    return fallback;
+  }
 }
 
-function toAccountRow(r: AccountDbRow): AccountRow {
+function rowToAccount(row: AccountRow): Account {
+  const ad = parseJson<AccountDiscovery>(row.account_discovery_json, { ...EMPTY_ACCOUNT_DISCOVERY });
+  const vm = parseJson<ValueMap>(row.value_map_json, JSON.parse(JSON.stringify(EMPTY_VALUE_MAP)));
+  const mp = parseJson<Meddpicc>(row.meddpicc_json, { ...EMPTY_MEDDPICC });
+
+  const leadRep = row.lead_rep_email
+    ? TRACKED_REPS.find((r) => r.email === row.lead_rep_email)
+    : null;
+
+  const firstDate = new Date(row.first_call_date);
+  const daysSince = Math.floor(
+    (Date.now() - firstDate.getTime()) / (1000 * 60 * 60 * 24)
+  );
+
   return {
-    domain: r.domain,
-    company: r.company,
-    leadRep: r.lead_rep,
-    callCount: r.call_count,
-    transcriptCount: r.transcript_count,
-    lastCall: r.last_call,
-    scores: {
-      discovery: r.discovery_score ?? 0,
-      valueMap: r.value_map_score ?? 0,
-      meddpicc: r.meddpicc_score ?? 0,
+    domain: row.domain,
+    companyName: row.company_name,
+    lastCallDate: row.last_call_date,
+    firstCallDate: row.first_call_date,
+    daysSinceFirstCall: daysSince,
+    leadRepName: leadRep?.name || row.lead_rep_email || "",
+    leadRepEmail: row.lead_rep_email || "",
+    callCount: row.call_count,
+    transcriptCount: row.transcript_count,
+    accountDiscovery: ad,
+    valueMap: vm,
+    meddpicc: mp,
+  };
+}
+
+export function queryAccountsTab(): AccountsTabData {
+  const rows = getAllAccountRows();
+  const accounts = rows.map(rowToAccount);
+  return {
+    accounts,
+    metadata: {
+      totalAccounts: accounts.length,
+      totalTranscripts: getTotalTranscripts(),
+      lastSyncAt: getLastSyncTimestamp(),
+      refreshedAt: new Date().toISOString(),
     },
   };
 }
 
-const ACCOUNT_SELECT = `
-  SELECT a.domain, a.company, a.lead_rep, a.call_count, a.transcript_count, a.last_call,
-         r.discovery_score, r.value_map_score, r.meddpicc_score
-  FROM accounts a
-  LEFT JOIN analysis_results r ON r.domain = a.domain
-`;
+export function querySalesRepsTab(): SalesRepsTabData {
+  const repTranscripts = getRepTranscriptCounts();
+  const accountRows = getAllAccountRows();
+  const accounts = accountRows.map(rowToAccount);
 
-export function getAccounts(): AccountRow[] {
-  const rows = getDb()
-    .prepare(`${ACCOUNT_SELECT} ORDER BY a.call_count DESC, a.company ASC`)
-    .all() as AccountDbRow[];
-  return rows.map(toAccountRow);
-}
+  const reps: SalesRepSummary[] = TRACKED_REPS.map((rep) => {
+    const repData = repTranscripts.find((rc) => rc.rep_email === rep.email);
+    const accountDomains = getRepAccountDomains(rep.email);
+    const repAccounts = accounts.filter((a) => accountDomains.includes(a.domain));
 
-export function getReps(): RepRow[] {
-  const accounts = getAccounts();
-  return TRACKED_REPS.map((rep) => {
-    const theirs = accounts.filter((a) => a.leadRep === rep.name);
-    const callCount = theirs.reduce((s, a) => s + a.callCount, 0);
-    const lastCall = theirs.reduce<string | null>(
-      (acc, a) => (a.lastCall && (!acc || a.lastCall > acc) ? a.lastCall : acc),
-      null,
-    );
-    const avg = (sel: (a: AccountRow) => number) =>
-      theirs.length ? Math.round(theirs.reduce((s, a) => s + sel(a), 0) / theirs.length) : 0;
+    let adScoreSum = 0;
+    let vmScoreSum = 0;
+    let mpScoreSum = 0;
+    for (const acct of repAccounts) {
+      adScoreSum += accountDiscoveryScore(acct.accountDiscovery);
+      vmScoreSum += valueMapScore(acct.valueMap);
+      mpScoreSum += meddpiccScore(acct.meddpicc);
+    }
+    const n = repAccounts.length || 1;
 
     return {
       name: rep.name,
-      callCount,
-      lastCall,
-      accountCount: theirs.length,
-      scores: {
-        discovery: avg((a) => a.scores.discovery),
-        valueMap: avg((a) => a.scores.valueMap),
-        meddpicc: avg((a) => a.scores.meddpicc),
-      },
-      active: callCount > 0,
+      email: rep.email,
+      callCount: repData?.transcript_count || 0,
+      lastCallDate: repData?.last_meeting || "",
+      accountCount: repAccounts.length,
+      accountDiscoveryScore: Math.round(adScoreSum / n),
+      valueMapScore: Math.round(vmScoreSum / n),
+      meddpiccScore: Math.round(mpScoreSum / n),
     };
   });
+
+  return { reps };
 }
 
-export function getKpis(): Kpis {
-  const db = getDb();
-  const accountsTracked =
-    (db.prepare("SELECT COUNT(*) AS n FROM accounts").get() as { n: number }).n ?? 0;
-  const callTranscripts =
-    (db.prepare("SELECT COUNT(*) AS n FROM transcripts").get() as { n: number }).n ?? 0;
-
-  const scoreRows = db
-    .prepare("SELECT discovery_score, value_map_score, meddpicc_score FROM analysis_results")
-    .all() as { discovery_score: number; value_map_score: number; meddpicc_score: number }[];
-  let avgCoverage = 0;
-  if (scoreRows.length) {
-    const total = scoreRows.reduce(
-      (s, r) => s + (r.discovery_score + r.value_map_score + r.meddpicc_score) / 3,
-      0,
-    );
-    avgCoverage = Math.round(total / scoreRows.length);
+function parseThemes(text: string): Theme[] {
+  if (!text?.trim()) return [];
+  const lines = text.split("\n").filter((l) => l.trim());
+  const themes: Theme[] = [];
+  for (const line of lines) {
+    const cleaned = line.replace(/^[•\-\*]\s*/, "").trim();
+    if (!cleaned) continue;
+    // Extract percentage from end: "... — 42%" or "... - 42%" or "... (42%)"
+    const pctMatch = cleaned.match(/[\s—\-–]+(\d{1,3})%\s*$/);
+    const parenMatch = cleaned.match(/\((\d{1,3})%\)\s*$/);
+    let pct = 0;
+    let rest = cleaned;
+    if (pctMatch) {
+      pct = parseInt(pctMatch[1], 10);
+      rest = cleaned.slice(0, cleaned.length - pctMatch[0].length).trim();
+    } else if (parenMatch) {
+      pct = parseInt(parenMatch[1], 10);
+      rest = cleaned.slice(0, cleaned.length - parenMatch[0].length).trim();
+    }
+    // Split on first ": " for label/body
+    const colonIdx = rest.indexOf(": ");
+    let label = "";
+    let body = rest;
+    if (colonIdx > 0 && colonIdx < 80) {
+      label = rest.slice(0, colonIdx).trim();
+      body = rest.slice(colonIdx + 2).trim();
+    }
+    themes.push({ label, body, pct });
   }
+  return themes;
+}
 
-  const reps = getReps();
+export function queryAccountDiscoveryTab(): AccountDiscoveryTabData {
+  const rows = getAllAccountRows();
+  const aggregate = getAggregateInsight("accountDiscovery");
+  const parsed = aggregate
+    ? parseJson<Record<string, string>>(aggregate.result_json, {})
+    : {};
+
+  const sections: AggregateSection[] = ACCOUNT_DISCOVERY_KEYS.map((key) => ({
+    key,
+    label: ACCOUNT_DISCOVERY_LABELS[key],
+    themes: parseThemes(parsed[key] || ""),
+  }));
+
   return {
-    accountsTracked,
-    callTranscripts,
-    avgCoverage,
-    activeReps: reps.filter((r) => r.active).length,
-    totalReps: TRACKED_REPS.length,
+    totalAccounts: rows.length,
+    totalTranscripts: getTotalTranscripts(),
+    analyzedAt: aggregate?.analyzed_at ?? null,
+    sections,
   };
 }
 
-export function getAccountDetail(domain: string): AccountDetail | null {
-  const db = getDb();
-  const row = db
-    .prepare(`${ACCOUNT_SELECT} WHERE a.domain = ?`)
-    .get(domain) as AccountDbRow | undefined;
-  if (!row) return null;
+export function queryValueMapTab(): ValueMapTabData {
+  const rows = getAllAccountRows();
+  const aggregate = getAggregateInsight("valueMap");
+  const parsed = aggregate
+    ? parseJson<Record<string, Record<string, string>>>(aggregate.result_json, {})
+    : {};
 
-  const analysisRow = db
-    .prepare("SELECT discovery, value_map, meddpicc FROM analysis_results WHERE domain = ?")
-    .get(domain) as { discovery: string; value_map: string; meddpicc: string } | undefined;
-
-  const analysis: AccountAnalysis | null = analysisRow
-    ? {
-        discovery: JSON.parse(analysisRow.discovery),
-        valueMap: JSON.parse(analysisRow.value_map),
-        meddpicc: JSON.parse(analysisRow.meddpicc),
-      }
-    : null;
-
-  const callRows = db
-    .prepare(
-      "SELECT id, subject, start_time, attendees, tracked_reps FROM calls WHERE domain = ? ORDER BY start_time DESC",
-    )
-    .all(domain) as {
-    id: string;
-    subject: string;
-    start_time: string | null;
-    attendees: string;
-    tracked_reps: string;
-  }[];
-
-  const calls: CallRecord[] = callRows.map((c) => ({
-    id: c.id,
-    subject: c.subject,
-    startTime: c.start_time,
-    reps: JSON.parse(c.tracked_reps) as string[],
-    attendees: (JSON.parse(c.attendees) as { name: string; email: string }[]).map(
-      (a) => a.name || a.email,
-    ),
+  const vmRows = VALUE_MAP_APP_KEYS.map((appKey) => ({
+    appKey,
+    appLabel: VALUE_MAP_APP_LABELS[appKey],
+    persona: parseThemes(parsed[appKey]?.persona || ""),
+    jobs: parseThemes(parsed[appKey]?.jobsToBeDone || ""),
+    value: parseThemes(parsed[appKey]?.valueUnlocked || ""),
   }));
 
-  return { ...toAccountRow(row), analysis, calls };
+  return {
+    totalAccounts: rows.length,
+    totalTranscripts: getTotalTranscripts(),
+    analyzedAt: aggregate?.analyzed_at ?? null,
+    rows: vmRows,
+  };
 }
 
-function getInsights<T>(framework: string, fallback: T): T {
-  const row = getDb()
-    .prepare("SELECT data FROM aggregate_insights WHERE framework = ?")
-    .get(framework) as { data: string } | undefined;
-  return row ? (JSON.parse(row.data) as T) : fallback;
+export function queryMeddpiccTab(): MeddpiccTabData {
+  const rows = getAllAccountRows();
+  const aggregate = getAggregateInsight("meddpicc");
+  const parsed = aggregate
+    ? parseJson<Record<string, string>>(aggregate.result_json, {})
+    : {};
+
+  const sections: AggregateSection[] = MEDDPICC_KEYS.map((key) => ({
+    key,
+    label: MEDDPICC_LABELS[key],
+    themes: parseThemes(parsed[key] || ""),
+  }));
+
+  return {
+    totalAccounts: rows.length,
+    totalTranscripts: getTotalTranscripts(),
+    analyzedAt: aggregate?.analyzed_at ?? null,
+    sections,
+  };
 }
 
-export function getDiscoveryInsights(): DiscoveryInsights {
-  return getInsights<DiscoveryInsights>("discovery", {} as DiscoveryInsights);
-}
-export function getValueMapInsights(): ValueMapInsights {
-  return getInsights<ValueMapInsights>("valuemap", {} as ValueMapInsights);
-}
-export function getMeddpiccInsights(): MeddpiccInsights {
-  return getInsights<MeddpiccInsights>("meddpicc", {} as MeddpiccInsights);
+export function queryAccountDetail(domain: string): AccountDetailData | null {
+  const row = getAccountRow(domain);
+  if (!row) return null;
+
+  const account = rowToAccount(row);
+  const callRows = getCallsForAccount(domain);
+
+  const calls: CallRecord[] = callRows.map((c) => {
+    const repEmails = parseJson<string[]>(c.tracked_rep_emails_json, []);
+    const repNames = repEmails.map((email) => {
+      const rep = TRACKED_REPS.find((r) => r.email === email);
+      return rep?.name || email;
+    });
+    return {
+      meetingUuid: c.meeting_uuid,
+      date: c.start_at,
+      subject: c.subject,
+      reps: repNames,
+    };
+  });
+
+  return { account, calls };
 }

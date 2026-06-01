@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
-import { getAccounts } from "@/lib/tab-queries";
+import { queryAccountsTab } from "@/lib/tab-queries";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
-export function GET() {
-  return NextResponse.json({ accounts: getAccounts() });
+export async function GET() {
+  try {
+    const data = queryAccountsTab();
+    return NextResponse.json(data);
+  } catch (error) {
+    console.error("[duro-tracks] Accounts query failed:", error);
+    return NextResponse.json(
+      { error: "Failed to load accounts" },
+      { status: 500 }
+    );
+  }
 }

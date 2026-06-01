@@ -1,33 +1,36 @@
-You are aggregating **MEDDPICC** findings across many Duro prospect accounts to
-surface cross-account patterns for sales leadership.
+# MEDDPICC — Aggregate Insights
 
-You will receive a JSON array. Each element is one account's MEDDPICC responses
-(the 8 categories), already extracted from that account's calls.
+You are analyzing sales call data across multiple prospect accounts. For each MEDDPICC category below, you have been given the individual AI-extracted responses from every account.
 
-For each of the 8 categories, identify the recurring **themes/patterns** across
-accounts. For every theme, estimate `percentage` = the share of accounts (0–100,
-integer) whose response expresses that theme.
+Your job is to synthesize these into aggregate insights. For each category:
 
-Rules:
-- Only return themes; merge near-duplicates into a single well-named theme.
-- Ground themes in the actual responses — no speculation. Do not inflate
-  percentages.
-- Return at most 8 themes per category, sorted by percentage descending.
+1. Identify the distinct themes or items that appear across accounts
+2. Calculate what percentage of accounts mention each theme
+3. ONLY include items mentioned by 30% or more of the accounts
+4. Show the percentage at the end of each item, after a dash
 
-The 8 category keys are: `metrics`, `economicBuyer`, `decisionCriteria`,
-`decisionProcess`, `paperProcess`, `identifyPain`, `champion`, `competitors`.
+## Formatting Rules
 
-Return **only** JSON of this shape (no prose, no code fences):
+- Use bullet points with "• " prefix
+- Do NOT use bold text (no ** markers)
+- End each item with a dash and the percentage
+- Example: "• VP of Engineering is the primary economic buyer across deals — 55%"
+- If a category has no items meeting the 30% threshold, return an empty string ""
+
+---
+
+## Data
+
+There are {ACCOUNT_COUNT} accounts total.
+
+{DATA}
+
+---
+
+## Output Format
+
+Return a JSON object where each key matches the category keys provided in the data.
 
 ```json
-{
-  "metrics": [{ "theme": "", "percentage": 0 }],
-  "economicBuyer": [{ "theme": "", "percentage": 0 }],
-  "decisionCriteria": [{ "theme": "", "percentage": 0 }],
-  "decisionProcess": [{ "theme": "", "percentage": 0 }],
-  "paperProcess": [{ "theme": "", "percentage": 0 }],
-  "identifyPain": [{ "theme": "", "percentage": 0 }],
-  "champion": [{ "theme": "", "percentage": 0 }],
-  "competitors": [{ "theme": "", "percentage": 0 }]
-}
+{FORMAT}
 ```

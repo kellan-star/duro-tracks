@@ -1,21 +1,30 @@
 import { NextResponse } from "next/server";
-import { getProgress, runSync } from "@/lib/sync-engine";
+import { runSync } from "@/lib/sync-engine";
+import { getLastSyncTimestamp, isSyncing } from "@/lib/db";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
-// POST /api/sync — trigger a sync cycle (runs in the background; poll /api/progress).
-export async function POST() {
-  const current = getProgress();
-  if (current.running) {
-    return NextResponse.json({ started: false, ...current });
-  }
-  // Fire and forget — progress is tracked in module state.
-  void runSync();
-  return NextResponse.json({ started: true, ...getProgress() });
+export async function GET() {
+  return NextResponse.json({
+    lastSyncAt: getLastSyncTimestamp(),
+    isSyncing: isSyncing(),
+  });
 }
 
-// GET /api/sync — sync status.
-export function GET() {
-  return NextResponse.json(getProgress());
+export async function POST() {
+  if (isSyncing()) {
+    return NextResponse.json(
+      { error: "Sync already in progress" },
+      { status: 409 }
+    );
+  }
+
+  try {
+    const result = await runSync();
+    return NextResponse.json(result);
+  } catch (error) {
+    console.error("[duro-tracks] Sync failed:", error);
+    return NextResponse.json(
+      { error: "Sync failed", details: String(error).slice(0, 500) },
+      { status: 500 }
+    );
+  }
 }

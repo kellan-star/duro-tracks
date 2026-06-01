@@ -1,15 +1,8 @@
-# Railway / Nixpacks build configuration.
-# better-sqlite3 is a native addon, so the build needs Python and a C/C++
-# toolchain available to compile (or verify the prebuilt) the binary.
-
 [phases.setup]
-nixPkgs = ["nodejs_22", "python3", "gcc", "gnumake"]
-
-[phases.install]
-cmds = ["npm ci"]
+aptPkgs = ["python3", "make", "g++"]
 
 [phases.build]
-cmds = ["npm run build"]
+cmds = ["npm ci", "npm run build"]
 
 [start]
-cmd = "npm run start"
+cmd = "npm start"

@@ -1,38 +1,38 @@
-// Simple token-bucket rate limiter. Refills `capacity` tokens every
-// `intervalMs`. `take()` resolves once a token is available.
-
-export class RateLimiter {
+class TokenBucket {
   private tokens: number;
-  private readonly capacity: number;
-  private readonly refillMs: number;
   private lastRefill: number;
+  private readonly maxTokens: number;
+  private readonly refillRate: number; // tokens per ms
 
-  constructor(capacity: number, intervalMs = 60_000) {
-    this.capacity = capacity;
-    this.tokens = capacity;
-    this.refillMs = intervalMs / capacity;
+  constructor(maxTokens: number, refillPerSecond: number) {
+    this.maxTokens = maxTokens;
+    this.tokens = maxTokens;
     this.lastRefill = Date.now();
+    this.refillRate = refillPerSecond / 1000;
   }
 
-  private refill() {
+  private refill(): void {
     const now = Date.now();
     const elapsed = now - this.lastRefill;
-    if (elapsed <= 0) return;
-    const refilled = Math.floor(elapsed / this.refillMs);
-    if (refilled > 0) {
-      this.tokens = Math.min(this.capacity, this.tokens + refilled);
-      this.lastRefill += refilled * this.refillMs;
-    }
+    this.tokens = Math.min(this.maxTokens, this.tokens + elapsed * this.refillRate);
+    this.lastRefill = now;
   }
 
-  async take(): Promise<void> {
+  async acquire(): Promise<void> {
     this.refill();
-    if (this.tokens > 0) {
+    if (this.tokens >= 1) {
       this.tokens -= 1;
       return;
     }
-    const wait = this.refillMs - (Date.now() - this.lastRefill);
-    await new Promise((r) => setTimeout(r, Math.max(0, wait)));
-    return this.take();
+    const waitMs = Math.ceil((1 - this.tokens) / this.refillRate);
+    await new Promise((resolve) => setTimeout(resolve, waitMs));
+    this.refill();
+    this.tokens -= 1;
   }
 }
+
+// Avoma: 60 requests per minute = 1 per second
+export const avomaRateLimiter = new TokenBucket(60, 1);
+
+// Anthropic: 5 requests per minute
+export const anthropicRateLimiter = new TokenBucket(5, 5 / 60);

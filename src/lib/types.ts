@@ -1,144 +1,316 @@
-// ---------------------------------------------------------------------------
-// Domain types for Duro Tracks
-// ---------------------------------------------------------------------------
+// --- Sales Rep Tracking ---
 
 export interface TrackedRep {
   name: string;
-  /** Lowercased email(s) used to match this rep among meeting attendees. */
+  /** Canonical/primary email — the stable key used across the DB. */
+  email: string;
+  /** Every address this rep may appear under as a meeting attendee. */
   emails: string[];
 }
 
-// ---------------------------------------------------------------------------
-// Framework definitions
-// ---------------------------------------------------------------------------
+export const TRACKED_REPS: TrackedRep[] = [
+  {
+    name: "Blake O'Connor",
+    email: "blake@durolabs.co",
+    emails: ["blake@durolabs.co", "blake.oconnor@altium.com"],
+  },
+  {
+    name: "Reese Fairchild",
+    email: "reese@durolabs.co",
+    emails: ["reese@durolabs.co", "reese.fairchild@altium.com"],
+  },
+];
 
-/** Account Discovery — 7 questions. */
-export const DISCOVERY_QUESTIONS = [
-  { key: "companyPriorities", label: "Company Priorities", description: "Business goals the prospect is aiming to achieve" },
-  { key: "competitiveEnvironment", label: "Competitive Environment", description: "Non-Duro tools currently in use or being evaluated (e.g., Spreadsheets, Arena, Teamcenter, Oracle Agile)" },
-  { key: "urgency", label: "Urgency", description: "Why they need to change now; consequences of inaction" },
-  { key: "span", label: "Span", description: "Number of people involved in design, development, production" },
-  { key: "financialOperationalImpact", label: "Financial & Operational Impact", description: "Cost of the status quo; compliance risks; delays" },
-  { key: "commonBarriers", label: "Common Barriers", description: "Budget limits, workflow resistance, IT/security concerns" },
-  { key: "counterStrategy", label: "Counter-Strategy", description: "How the prospect will prove value to internal skeptics" },
-] as const;
+// Every tracked-rep address (lowercased) — used to detect a rep among attendees.
+export const TRACKED_REP_EMAILS = new Set(
+  TRACKED_REPS.flatMap((r) => r.emails.map((e) => e.toLowerCase()))
+);
 
-export type DiscoveryKey = (typeof DISCOVERY_QUESTIONS)[number]["key"];
+// Map any rep alias → that rep's canonical/primary email.
+const EMAIL_TO_PRIMARY = new Map<string, string>();
+for (const rep of TRACKED_REPS) {
+  for (const e of rep.emails) EMAIL_TO_PRIMARY.set(e.toLowerCase(), rep.email);
+}
 
-/** Value Map — one app (PLM) x 3 dimensions = 3 cells. */
-export const VALUE_MAP_APPS = ["PLM"] as const;
-export type ValueMapApp = (typeof VALUE_MAP_APPS)[number];
+/** Returns the rep's canonical email for any of their aliases, else null. */
+export function canonicalRepEmail(email: string): string | null {
+  return EMAIL_TO_PRIMARY.get(email.toLowerCase()) ?? null;
+}
 
-export const VALUE_MAP_DIMENSIONS = [
-  { key: "persona", label: "Persona" },
-  { key: "jobsToBeDone", label: "Jobs To Be Done" },
-  { key: "valueUnlocked", label: "Value Unlocked" },
-] as const;
+export const INTERNAL_DOMAINS = new Set(["altium.com", "durolabs.co", "renesas.com"]);
 
-export type ValueMapDimension = (typeof VALUE_MAP_DIMENSIONS)[number]["key"];
+export const PERSONAL_EMAIL_DOMAINS = new Set([
+  "gmail.com",
+  "yahoo.com",
+  "hotmail.com",
+  "outlook.com",
+  "aol.com",
+  "icloud.com",
+  "mail.com",
+  "protonmail.com",
+  "live.com",
+  "msn.com",
+  "ymail.com",
+]);
 
-/** MEDDPICC — 8 categories, with single-letter chip identifiers. */
-export const MEDDPICC_CATEGORIES = [
-  { key: "metrics", label: "Metrics", letter: "M", description: "KPIs discussed, targets, trends" },
-  { key: "economicBuyer", label: "Economic Buyer", letter: "E", description: "Decision-makers and stakeholders" },
-  { key: "decisionCriteria", label: "Decision Criteria", letter: "D", description: "Features/requirements driving the decision" },
-  { key: "decisionProcess", label: "Decision Process", letter: "D", description: "Steps, milestones, blockers to final decision" },
-  { key: "paperProcess", label: "Paper Process", letter: "P", description: "Procurement, legal, contract approval steps" },
-  { key: "identifyPain", label: "Identify Pain", letter: "I", description: "Specific hurdles the prospect faces" },
-  { key: "champion", label: "Champion", letter: "C", description: "Internal advocate, their role and actions" },
-  { key: "competitors", label: "Competitors", letter: "C", description: "Competitor mentions, strengths, weaknesses" },
-] as const;
+// --- Account Discovery (7 questions) ---
 
-export type MeddpiccKey = (typeof MEDDPICC_CATEGORIES)[number]["key"];
+export interface AccountDiscovery {
+  companyPriorities: string;
+  competitiveEnvironment: string;
+  urgency: string;
+  span: string;
+  financialImpact: string;
+  commonBarriers: string;
+  counterStrategy: string;
+}
 
-export type Framework = "discovery" | "valuemap" | "meddpicc";
+export const ACCOUNT_DISCOVERY_LABELS: Record<keyof AccountDiscovery, string> = {
+  companyPriorities: "Company Priorities",
+  competitiveEnvironment: "Competitive Environment",
+  urgency: "Urgency",
+  span: "Span",
+  financialImpact: "Financial & Operational Impact",
+  commonBarriers: "Common Barriers",
+  counterStrategy: "Counter-Strategy",
+};
 
-// ---------------------------------------------------------------------------
-// Per-account AI analysis result shapes
-// ---------------------------------------------------------------------------
+export const ACCOUNT_DISCOVERY_KEYS = Object.keys(
+  ACCOUNT_DISCOVERY_LABELS
+) as Array<keyof AccountDiscovery>;
 
-export type DiscoveryAnalysis = Record<DiscoveryKey, string>;
+// --- Value Map (1 app × 3 columns = 3 cells) ---
 
-export interface ValueMapCell {
+export interface ValueMapEntry {
   persona: string;
   jobsToBeDone: string;
   valueUnlocked: string;
 }
-export type ValueMapAnalysis = Record<ValueMapApp, ValueMapCell>;
 
-export type MeddpiccAnalysis = Record<MeddpiccKey, string>;
-
-export interface AccountAnalysis {
-  discovery: DiscoveryAnalysis;
-  valueMap: ValueMapAnalysis;
-  meddpicc: MeddpiccAnalysis;
+export interface ValueMap {
+  plm: ValueMapEntry;
 }
 
-// ---------------------------------------------------------------------------
-// Aggregate (cross-account) insight shapes
-// ---------------------------------------------------------------------------
+export const VALUE_MAP_APP_LABELS: Record<keyof ValueMap, string> = {
+  plm: "PLM",
+};
 
-export interface AggregateTheme {
-  theme: string;
-  /** Share of accounts (0-100) where this theme appears. */
-  percentage: number;
+export const VALUE_MAP_APP_KEYS = Object.keys(
+  VALUE_MAP_APP_LABELS
+) as Array<keyof ValueMap>;
+
+export const VALUE_MAP_COLUMN_LABELS: Record<keyof ValueMapEntry, string> = {
+  persona: "Persona",
+  jobsToBeDone: "Jobs To Be Done",
+  valueUnlocked: "Value Unlocked",
+};
+
+export const VALUE_MAP_COLUMN_KEYS = Object.keys(
+  VALUE_MAP_COLUMN_LABELS
+) as Array<keyof ValueMapEntry>;
+
+export const VALUE_MAP_CELL_COUNT = VALUE_MAP_APP_KEYS.length * VALUE_MAP_COLUMN_KEYS.length;
+
+// --- MEDDPICC (8 categories) ---
+
+export interface Meddpicc {
+  metrics: string;
+  economicBuyer: string;
+  decisionCriteria: string;
+  decisionProcess: string;
+  paperProcess: string;
+  identifyPain: string;
+  champion: string;
+  competitors: string;
 }
 
-/** Discovery aggregate: themes per question. */
-export type DiscoveryInsights = Record<DiscoveryKey, AggregateTheme[]>;
+export const MEDDPICC_LABELS: Record<keyof Meddpicc, string> = {
+  metrics: "Metrics",
+  economicBuyer: "Economic Buyer",
+  decisionCriteria: "Decision Criteria",
+  decisionProcess: "Decision Process",
+  paperProcess: "Paper Process",
+  identifyPain: "Identify Pain",
+  champion: "Champion",
+  competitors: "Competitors",
+};
 
-/** Value Map aggregate: themes per (app, dimension). */
-export type ValueMapInsights = Record<ValueMapApp, Record<ValueMapDimension, AggregateTheme[]>>;
+export const MEDDPICC_KEYS = Object.keys(MEDDPICC_LABELS) as Array<keyof Meddpicc>;
 
-/** MEDDPICC aggregate: themes per category. */
-export type MeddpiccInsights = Record<MeddpiccKey, AggregateTheme[]>;
+// --- Combined Analysis Result ---
 
-// ---------------------------------------------------------------------------
-// Query-layer view models (what the API routes return)
-// ---------------------------------------------------------------------------
-
-export interface CoverageScores {
-  discovery: number;
-  valueMap: number;
-  meddpicc: number;
+export interface AnalysisResult {
+  accountDiscovery: AccountDiscovery;
+  valueMap: ValueMap;
+  meddpicc: Meddpicc;
 }
 
-export interface AccountRow {
+// --- Account ---
+
+export interface Account {
   domain: string;
-  company: string;
-  leadRep: string | null;
+  companyName: string;
+  lastCallDate: string;
+  firstCallDate: string;
+  daysSinceFirstCall: number;
+  leadRepName: string;
+  leadRepEmail: string;
   callCount: number;
   transcriptCount: number;
-  lastCall: string | null;
-  scores: CoverageScores;
+  accountDiscovery: AccountDiscovery;
+  valueMap: ValueMap;
+  meddpicc: Meddpicc;
 }
 
-export interface RepRow {
+// --- Sales Rep Summary ---
+
+export interface SalesRepSummary {
   name: string;
+  email: string;
   callCount: number;
-  lastCall: string | null;
+  lastCallDate: string;
   accountCount: number;
-  scores: CoverageScores; // averages across the rep's accounts
-  active: boolean;
+  accountDiscoveryScore: number;
+  valueMapScore: number;
+  meddpiccScore: number;
+}
+
+// --- Tab Type ---
+
+export type TabId =
+  | "accounts"
+  | "salesReps"
+  | "accountDiscovery"
+  | "valueMap"
+  | "meddpicc";
+
+// --- API Response Types ---
+
+export interface AccountsTabData {
+  accounts: Account[];
+  metadata: {
+    totalAccounts: number;
+    totalTranscripts: number;
+    lastSyncAt: string | null;
+    refreshedAt: string;
+  };
+}
+
+export interface SalesRepsTabData {
+  reps: SalesRepSummary[];
+}
+
+export interface InsightEntry {
+  accountDomain: string;
+  companyName: string;
+  text: string;
+}
+
+export interface Theme {
+  label: string;
+  body: string;
+  pct: number;
+}
+
+export interface AggregateSection {
+  key: string;
+  label: string;
+  themes: Theme[];
+}
+
+export interface AccountDiscoveryTabData {
+  totalAccounts: number;
+  totalTranscripts: number;
+  analyzedAt: string | null;
+  sections: AggregateSection[];
+}
+
+export interface ValueMapTabData {
+  totalAccounts: number;
+  totalTranscripts: number;
+  analyzedAt: string | null;
+  rows: Array<{
+    appKey: keyof ValueMap;
+    appLabel: string;
+    persona: Theme[];
+    jobs: Theme[];
+    value: Theme[];
+  }>;
+}
+
+export interface MeddpiccTabData {
+  totalAccounts: number;
+  totalTranscripts: number;
+  analyzedAt: string | null;
+  sections: AggregateSection[];
 }
 
 export interface CallRecord {
-  id: string;
+  meetingUuid: string;
+  date: string;
   subject: string;
-  startTime: string | null;
   reps: string[];
-  attendees: string[];
 }
 
-export interface AccountDetail extends AccountRow {
-  analysis: AccountAnalysis | null;
+export interface AccountDetailData {
+  account: Account;
   calls: CallRecord[];
 }
 
-export interface Kpis {
-  accountsTracked: number;
-  callTranscripts: number;
-  avgCoverage: number;
-  activeReps: number;
-  totalReps: number;
+export interface SyncStatus {
+  lastSyncAt: string | null;
+  isSyncing: boolean;
+}
+
+// --- Score Helpers ---
+
+const EMPTY_VALUE_MAP_ENTRY: ValueMapEntry = {
+  persona: "",
+  jobsToBeDone: "",
+  valueUnlocked: "",
+};
+
+export const EMPTY_ACCOUNT_DISCOVERY: AccountDiscovery = {
+  companyPriorities: "",
+  competitiveEnvironment: "",
+  urgency: "",
+  span: "",
+  financialImpact: "",
+  commonBarriers: "",
+  counterStrategy: "",
+};
+
+export const EMPTY_VALUE_MAP: ValueMap = {
+  plm: { ...EMPTY_VALUE_MAP_ENTRY },
+};
+
+export const EMPTY_MEDDPICC: Meddpicc = {
+  metrics: "",
+  economicBuyer: "",
+  decisionCriteria: "",
+  decisionProcess: "",
+  paperProcess: "",
+  identifyPain: "",
+  champion: "",
+  competitors: "",
+};
+
+export function accountDiscoveryScore(ad: AccountDiscovery): number {
+  const filled = ACCOUNT_DISCOVERY_KEYS.filter((k) => ad[k].trim()).length;
+  return Math.round((filled / ACCOUNT_DISCOVERY_KEYS.length) * 100);
+}
+
+export function valueMapScore(vm: ValueMap): number {
+  let filled = 0;
+  for (const appKey of VALUE_MAP_APP_KEYS) {
+    for (const colKey of VALUE_MAP_COLUMN_KEYS) {
+      if (vm[appKey][colKey].trim()) filled++;
+    }
+  }
+  return Math.round((filled / VALUE_MAP_CELL_COUNT) * 100);
+}
+
+export function meddpiccScore(mp: Meddpicc): number {
+  const filled = MEDDPICC_KEYS.filter((k) => mp[k].trim()).length;
+  return Math.round((filled / MEDDPICC_KEYS.length) * 100);
 }

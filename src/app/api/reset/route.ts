@@ -1,11 +1,21 @@
 import { NextResponse } from "next/server";
-import { resetDb } from "@/lib/db";
+import { resetDatabase, isSyncing } from "@/lib/db";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
+export async function POST() {
+  if (isSyncing()) {
+    return NextResponse.json(
+      { error: "Cannot reset while sync is in progress" },
+      { status: 409 }
+    );
+  }
 
-// POST /api/reset — clear all database tables.
-export function POST() {
-  resetDb();
-  return NextResponse.json({ ok: true });
+  try {
+    resetDatabase();
+    return NextResponse.json({ success: true, message: "Database cleared" });
+  } catch (error) {
+    return NextResponse.json(
+      { error: "Reset failed", details: String(error).slice(0, 500) },
+      { status: 500 }
+    );
+  }
 }

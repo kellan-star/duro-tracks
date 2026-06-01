@@ -1,10 +1,6 @@
 import { NextResponse } from "next/server";
-import { getProgress } from "@/lib/sync-engine";
+import { getProgress } from "@/lib/progress";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-
-// GET /api/progress — poll sync progress.
-export function GET() {
+export async function GET() {
   return NextResponse.json(getProgress());
 }
