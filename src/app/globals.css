@@ -1,0 +1,160 @@
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------ */
+/* Design system — CSS custom properties                               */
+/* ------------------------------------------------------------------ */
+:root {
+  --bg: #fafafa;
+  --surface: #ffffff;
+  --border: #e4e4e7;
+  --border-strong: #d4d4d8;
+
+  --text: #18181b;
+  --text-muted: #71717a;
+  --text-subtle: #a1a1aa;
+
+  --brand: #2563eb; /* Duro blue */
+  --brand-ink: #1e40af;
+  --brand-soft: #eff6ff;
+
+  /* Coverage bands */
+  --green-fg: #047857;
+  --green-bg: #ecfdf5;
+  --amber-fg: #b45309;
+  --amber-bg: #fffbeb;
+  --red-fg: #b91c1c;
+  --red-bg: #fef2f2;
+  --gray-fg: #a1a1aa;
+  --gray-bg: #f4f4f5;
+
+  /* Density */
+  --row-h: 38px;
+  --radius: 8px;
+}
+
+/* Map the design tokens into Tailwind's theme so utilities can use them. */
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-text-muted: var(--text-muted);
+  --color-brand: var(--brand);
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* Reusable component classes                                          */
+/* ------------------------------------------------------------------ */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.data-table thead th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0 12px;
+  height: 34px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.data-table tbody td {
+  padding: 0 12px;
+  height: var(--row-h);
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.data-table tbody tr:hover {
+  background: #f7f7f8;
+}
+
+/* Coverage pill */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.pill--green {
+  color: var(--green-fg);
+  background: var(--green-bg);
+}
+.pill--amber {
+  color: var(--amber-fg);
+  background: var(--amber-bg);
+}
+.pill--red {
+  color: var(--red-fg);
+  background: var(--red-bg);
+}
+.pill--gray {
+  color: var(--gray-fg);
+  background: var(--gray-bg);
+}
+
+/* Region tag */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid var(--border-strong);
+  color: var(--text-muted);
+  background: var(--surface);
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spin {
+  animation: spin 0.9s linear infinite;
+}
