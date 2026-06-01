@@ -8,7 +8,6 @@ import type {
   DiscoveryInsights,
   Kpis,
   MeddpiccInsights,
-  Region,
   RepRow,
   ValueMapInsights,
 } from "./types";
@@ -17,7 +16,6 @@ interface AccountDbRow {
   domain: string;
   company: string;
   lead_rep: string | null;
-  region: string | null;
   call_count: number;
   transcript_count: number;
   last_call: string | null;
@@ -31,7 +29,6 @@ function toAccountRow(r: AccountDbRow): AccountRow {
     domain: r.domain,
     company: r.company,
     leadRep: r.lead_rep,
-    region: (r.region as Region | null) ?? null,
     callCount: r.call_count,
     transcriptCount: r.transcript_count,
     lastCall: r.last_call,
@@ -44,7 +41,7 @@ function toAccountRow(r: AccountDbRow): AccountRow {
 }
 
 const ACCOUNT_SELECT = `
-  SELECT a.domain, a.company, a.lead_rep, a.region, a.call_count, a.transcript_count, a.last_call,
+  SELECT a.domain, a.company, a.lead_rep, a.call_count, a.transcript_count, a.last_call,
          r.discovery_score, r.value_map_score, r.meddpicc_score
   FROM accounts a
   LEFT JOIN analysis_results r ON r.domain = a.domain
@@ -71,7 +68,6 @@ export function getReps(): RepRow[] {
 
     return {
       name: rep.name,
-      region: rep.region,
       callCount,
       lastCall,
       accountCount: theirs.length,

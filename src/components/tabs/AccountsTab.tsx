@@ -5,13 +5,11 @@ import Link from "next/link";
 import { useAccounts } from "@/hooks/use-data";
 import { Avatar } from "@/components/shared/Avatar";
 import { CoveragePill } from "@/components/shared/CoveragePill";
-import { RegionTag } from "@/components/shared/RegionTag";
 import type { AccountRow } from "@/lib/types";
 
 type SortKey =
   | "company"
   | "leadRep"
-  | "region"
   | "callCount"
   | "lastCall"
   | "discovery"
@@ -28,7 +26,6 @@ function valueFor(a: AccountRow, key: SortKey): string | number {
   switch (key) {
     case "company": return a.company.toLowerCase();
     case "leadRep": return (a.leadRep ?? "").toLowerCase();
-    case "region": return a.region ?? "";
     case "callCount": return a.callCount;
     case "lastCall": return a.lastCall ?? "";
     case "discovery": return a.scores.discovery;
@@ -80,7 +77,6 @@ export function AccountsTab() {
             <Th k="company">Company</Th>
             <th>Domain</th>
             <Th k="leadRep">Lead Rep</Th>
-            <Th k="region">Region</Th>
             <Th k="callCount" right>Calls</Th>
             <Th k="lastCall">Last call</Th>
             <Th k="discovery" right>Account Discovery</Th>
@@ -91,10 +87,10 @@ export function AccountsTab() {
         </thead>
         <tbody>
           {isLoading && (
-            <tr><td colSpan={10} className="text-center text-[var(--text-muted)]">Loading…</td></tr>
+            <tr><td colSpan={9} className="text-center text-[var(--text-muted)]">Loading…</td></tr>
           )}
           {!isLoading && rows.length === 0 && (
-            <tr><td colSpan={10} className="text-center text-[var(--text-muted)]">No accounts yet — run a sync.</td></tr>
+            <tr><td colSpan={9} className="text-center text-[var(--text-muted)]">No accounts yet — run a sync.</td></tr>
           )}
           {rows.map((a) => (
             <tr key={a.domain}>
@@ -106,7 +102,6 @@ export function AccountsTab() {
               </td>
               <td className="text-[var(--text-muted)]">{a.domain}</td>
               <td>{a.leadRep ?? "—"}</td>
-              <td><RegionTag region={a.region} /></td>
               <td className="text-right tabular-nums">{a.callCount}</td>
               <td className="text-[var(--text-muted)]">{fmtDate(a.lastCall)}</td>
               <td className="text-right"><CoveragePill score={a.scores.discovery} /></td>

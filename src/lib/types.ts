@@ -2,13 +2,10 @@
 // Domain types for Duro Tracks
 // ---------------------------------------------------------------------------
 
-export type Region = "US" | "EMEA";
-
 export interface TrackedRep {
   name: string;
   /** Lowercased email(s) used to match this rep among meeting attendees. */
   emails: string[];
-  region: Region;
 }
 
 // ---------------------------------------------------------------------------
@@ -110,7 +107,6 @@ export interface AccountRow {
   domain: string;
   company: string;
   leadRep: string | null;
-  region: Region | null;
   callCount: number;
   transcriptCount: number;
   lastCall: string | null;
@@ -119,7 +115,6 @@ export interface AccountRow {
 
 export interface RepRow {
   name: string;
-  region: Region;
   callCount: number;
   lastCall: string | null;
   accountCount: number;

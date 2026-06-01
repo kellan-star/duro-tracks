@@ -3,7 +3,6 @@
 import { useReps } from "@/hooks/use-data";
 import { Avatar } from "@/components/shared/Avatar";
 import { CoveragePill } from "@/components/shared/CoveragePill";
-import { RegionTag } from "@/components/shared/RegionTag";
 
 function fmtDate(s: string | null): string {
   if (!s) return "—";
@@ -21,7 +20,6 @@ export function RepsTab() {
         <thead>
           <tr>
             <th>Rep</th>
-            <th>Region</th>
             <th className="!text-right">Calls</th>
             <th>Last call</th>
             <th className="!text-right">Accounts</th>
@@ -32,7 +30,7 @@ export function RepsTab() {
         </thead>
         <tbody>
           {isLoading && (
-            <tr><td colSpan={8} className="text-center text-[var(--text-muted)]">Loading…</td></tr>
+            <tr><td colSpan={7} className="text-center text-[var(--text-muted)]">Loading…</td></tr>
           )}
           {reps.map((r) => (
             <tr key={r.name}>
@@ -45,7 +43,6 @@ export function RepsTab() {
                   )}
                 </span>
               </td>
-              <td><RegionTag region={r.region} /></td>
               <td className="text-right tabular-nums">{r.callCount}</td>
               <td className="text-[var(--text-muted)]">{fmtDate(r.lastCall)}</td>
               <td className="text-right tabular-nums">{r.accountCount}</td>

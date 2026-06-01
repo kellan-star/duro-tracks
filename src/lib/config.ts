@@ -1,16 +1,27 @@
 import type { TrackedRep } from "./types";
 
 // ---------------------------------------------------------------------------
-// Tracked sales reps (the Duro team).
+// Tracked sales reps (the Duro team). All reps are US-based.
 //
-// NOTE: regions and email addresses below are best-effort placeholders derived
-// from the PRD — confirm/replace with the reps' real Avoma login emails so
-// attendee matching works against live data.
+// `emails` lists every address a rep may appear under as a meeting attendee.
+// These addresses are always treated as rep (not prospect) attendees, even if a
+// rep ever joins from a non-internal domain.
 // ---------------------------------------------------------------------------
 export const TRACKED_REPS: TrackedRep[] = [
-  { name: "Blake O'Connor", emails: ["blake@durolabs.co"], region: "US" },
-  { name: "Reese Fairchild", emails: ["reese@durolabs.co"], region: "EMEA" },
+  {
+    name: "Blake O'Connor",
+    emails: ["blake@durolabs.co", "blake.oconnor@altium.com"],
+  },
+  {
+    name: "Reese Fairchild",
+    emails: ["reese@durolabs.co", "reese.fairchild@altium.com"],
+  },
 ];
+
+/** Every tracked-rep email, lowercased — never counted as a prospect attendee. */
+export const TRACKED_REP_EMAILS = new Set(
+  TRACKED_REPS.flatMap((r) => r.emails.map((e) => e.toLowerCase())),
+);
 
 /** Email domains considered "internal" (never counted as a prospect/account). */
 export const INTERNAL_DOMAINS = ["durolabs.co", "altium.com", "renesas.com"];

@@ -55,7 +55,6 @@ function migrate(db: Database.Database) {
       domain           TEXT PRIMARY KEY,
       company          TEXT,
       lead_rep         TEXT,
-      region           TEXT,
       call_count       INTEGER DEFAULT 0,
       transcript_count INTEGER DEFAULT 0,
       last_call        TEXT,

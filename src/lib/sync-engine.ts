@@ -6,6 +6,7 @@ import {
   PERSONAL_EMAIL_DOMAINS,
   SYNC_WINDOW_DAYS,
   TRACKED_REPS,
+  TRACKED_REP_EMAILS,
 } from "./config";
 import {
   getNotes,
@@ -23,7 +24,7 @@ import {
 } from "./aggregate-analyzer";
 import { hasAnthropicKey } from "./anthropic";
 import { scoreAnalysis } from "./scoring";
-import type { AccountAnalysis, Region } from "./types";
+import type { AccountAnalysis } from "./types";
 
 // ---------------------------------------------------------------------------
 // Progress state (polled by GET /api/progress)
@@ -78,13 +79,11 @@ function trackedRepsOnCall(attendees: AvomaAttendee[]): string[] {
   );
 }
 
-function duroSideCount(attendees: AvomaAttendee[]): number {
-  return attendees.filter((a) => domainOf(a.email) === "durolabs.co").length;
-}
-
 function externalAttendees(attendees: AvomaAttendee[]): AvomaAttendee[] {
   return attendees.filter((a) => {
-    const d = domainOf(a.email);
+    const email = a.email.toLowerCase();
+    if (TRACKED_REP_EMAILS.has(email)) return false; // a rep, never a prospect
+    const d = domainOf(email);
     return d && !isInternalDomain(d);
   });
 }
@@ -110,9 +109,11 @@ function resolveDomain(attendees: AvomaAttendee[]): string | null {
 
 /** A call qualifies for inclusion per the PRD filtering rules. */
 function callQualifies(attendees: AvomaAttendee[]): boolean {
-  const hasTrackedRep = trackedRepsOnCall(attendees).length >= 1;
+  const repCount = trackedRepsOnCall(attendees).length;
+  const hasTrackedRep = repCount >= 1;
   const hasExternal = externalAttendees(attendees).length >= 1;
-  const notTraining = duroSideCount(attendees) <= 1;
+  // "No more than 1 Duro rep (Blake or Reese)" — both on the call = training.
+  const notTraining = repCount <= 1;
   return hasTrackedRep && hasExternal && notTraining;
 }
 
@@ -122,10 +123,6 @@ function companyFromDomain(domain: string): string {
     .split(/[-_]/)
     .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
     .join(" ");
-}
-
-function regionForRep(name: string): Region | null {
-  return TRACKED_REPS.find((r) => r.name === name)?.region ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -306,12 +303,11 @@ function rebuildAccounts(db: ReturnType<typeof getDb>) {
   }
 
   const upsert = db.prepare(
-    `INSERT INTO accounts (domain, company, lead_rep, region, call_count, transcript_count, last_call, analysis_dirty, updated_at)
-     VALUES (@domain, @company, @leadRep, @region, @callCount, @transcriptCount, @lastCall, @dirty, datetime('now'))
+    `INSERT INTO accounts (domain, company, lead_rep, call_count, transcript_count, last_call, analysis_dirty, updated_at)
+     VALUES (@domain, @company, @leadRep, @callCount, @transcriptCount, @lastCall, @dirty, datetime('now'))
      ON CONFLICT(domain) DO UPDATE SET
        company = excluded.company,
        lead_rep = excluded.lead_rep,
-       region = excluded.region,
        call_count = excluded.call_count,
        transcript_count = excluded.transcript_count,
        last_call = excluded.last_call,
@@ -332,7 +328,6 @@ function rebuildAccounts(db: ReturnType<typeof getDb>) {
       domain,
       company: companyFromDomain(domain),
       leadRep,
-      region: leadRep ? regionForRep(leadRep) : null,
       callCount: e.calls,
       transcriptCount: transcriptCounts.get(domain) ?? 0,
       lastCall: e.lastCall,

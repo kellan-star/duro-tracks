@@ -5,9 +5,8 @@
 Duro Tracks is a sales call analysis dashboard that aggregates call transcripts
 from Avoma, applies AI analysis across three sales qualification frameworks, and
 surfaces cross-account insights for sales leadership. The application tracks the
-Duro sales reps across US and EMEA regions, analyzing their prospect calls to
-measure deal qualification coverage and identify patterns across the book of
-business.
+Duro sales reps (all US-based), analyzing their prospect calls to measure deal
+qualification coverage and identify patterns across the book of business.
 
 ## Business Context
 
@@ -134,16 +133,15 @@ account, using the full concatenated transcript text.
 ### Tab 1: Accounts
 
 Single source of truth for account coverage. Sortable data table with columns:
-Company (with colored initial avatar), Domain, Lead Rep, Region (US / EMEA tag),
-Calls (count), Last call (date), Account Discovery (coverage % pill), Value Map
-(coverage % pill), MEDDPICC (coverage % pill), View → (link to account detail
-page).
+Company (with colored initial avatar), Domain, Lead Rep, Calls (count), Last call
+(date), Account Discovery (coverage % pill), Value Map (coverage % pill),
+MEDDPICC (coverage % pill), View → (link to account detail page).
 
 ### Tab 2: Sales Reps
 
 Activity and qualification coverage per rep: Rep name (with initials avatar;
-"Inactive" badge if 0 calls), Region, Calls (count), Last call (date), Accounts
-(count), Account Discovery (avg %), Value Map (avg %), MEDDPICC (avg %).
+"Inactive" badge if 0 calls), Calls (count), Last call (date), Accounts (count),
+Account Discovery (avg %), Value Map (avg %), MEDDPICC (avg %).
 
 ### Tab 3: Account Discovery (Cross-Account Insights)
 
@@ -167,8 +165,8 @@ filtering as Account Discovery.
 ### Account Detail Page (`/accounts/[domain]`)
 
 Per-account deep dive accessed via "View →" from the Accounts table. Displays the
-account header (company name, domain, lead rep, region, call count, transcript
-count, coverage scores), the Account Discovery section (7 Q&A cards), the Value
+account header (company name, domain, lead rep, call count, transcript count,
+coverage scores), the Account Discovery section (7 Q&A cards), the Value
 Map section (1×3 grid), the MEDDPICC section (8 category cards), and the Call
 History table (date, subject, reps on each call).
 

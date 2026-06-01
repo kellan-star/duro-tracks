@@ -7,7 +7,6 @@ import { PasscodeGate } from "@/components/shared/PasscodeGate";
 import { Logo } from "@/components/shared/Logo";
 import { Avatar } from "@/components/shared/Avatar";
 import { CoveragePill } from "@/components/shared/CoveragePill";
-import { RegionTag } from "@/components/shared/RegionTag";
 import {
   DISCOVERY_QUESTIONS,
   MEDDPICC_CATEGORIES,
@@ -61,7 +60,6 @@ export default function AccountDetailPage() {
                 </div>
                 <div className="mt-4 flex flex-wrap items-center gap-x-8 gap-y-3 text-[13px]">
                   <Meta label="Lead Rep" value={data.leadRep ?? "—"} />
-                  <Meta label="Region" value={<RegionTag region={data.region} />} />
                   <Meta label="Calls" value={String(data.callCount)} />
                   <Meta label="Transcripts" value={String(data.transcriptCount)} />
                   <Meta label="Account Discovery" value={<CoveragePill score={data.scores.discovery} />} />
