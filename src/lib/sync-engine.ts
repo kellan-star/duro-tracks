@@ -69,12 +69,14 @@ async function doSync(): Promise<SyncResult> {
   updateProgress("Starting", "Fetching Avoma meetings...", 5);
 
   const now = new Date();
-  const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+  // Only consider meetings completed in this calendar year.
+  const SYNC_YEAR = 2026;
+  const yearStart = new Date(Date.UTC(SYNC_YEAR, 0, 1));
 
   const lastSync = getLastSyncTimestamp();
   const fromDate = lastSync
-    ? new Date(Math.max(new Date(lastSync).getTime() - 24 * 60 * 60 * 1000, ninetyDaysAgo.getTime())).toISOString()
-    : ninetyDaysAgo.toISOString();
+    ? new Date(Math.max(new Date(lastSync).getTime() - 24 * 60 * 60 * 1000, yearStart.getTime())).toISOString()
+    : yearStart.toISOString();
   const toDate = now.toISOString();
 
   const [avomaMeetings, avomaUsers] = await Promise.all([
@@ -97,6 +99,13 @@ async function doSync(): Promise<SyncResult> {
   for (const meeting of avomaMeetings) {
     if (meeting.is_internal) continue;
     if (!meeting.attendees?.length) continue;
+
+    // Only include meetings completed in SYNC_YEAR (and not still in the future).
+    const completedAt = meeting.end_at || meeting.start_at || meeting.created;
+    if (!completedAt) continue;
+    const completedDate = new Date(completedAt);
+    if (completedDate.getUTCFullYear() !== SYNC_YEAR) continue;
+    if (completedDate.getTime() > now.getTime()) continue;
 
     const trackedReps = getTrackedRepEmails(meeting.attendees);
     if (trackedReps.length === 0) continue;
@@ -193,8 +202,8 @@ async function doSync(): Promise<SyncResult> {
     let source: "transcript" | "notes" = "transcript";
 
     if (!text) {
-      // Use broad date range for notes fallback (90 days)
-      const notesFrom = ninetyDaysAgo.toISOString();
+      // Use the full sync window for the notes fallback.
+      const notesFrom = yearStart.toISOString();
       const notesTo = now.toISOString();
       const notes = await fetchNotesForMeeting(uuid, notesFrom, notesTo);
       text = notes
