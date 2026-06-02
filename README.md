@@ -90,7 +90,32 @@ Without API keys the app still builds and runs — the dashboard renders empty;
 ## Deployment (Railway)
 
 `nixpacks.toml` installs the native-module build deps for `better-sqlite3`.
-Mount a persistent volume at `/app/data` so the SQLite file
-(`data/duro-tracks.db`, relative to the app's working directory) survives
-deploys. Set `AVOMA_API_KEY`, `ANTHROPIC_API_KEY`, and optionally
-`ANTHROPIC_MODEL` / `MAX_DEALS`.
+Set `AVOMA_API_KEY`, `ANTHROPIC_API_KEY`, and optionally `ANTHROPIC_MODEL` /
+`MAX_DEALS` in the service's **Variables**. Don't set `PORT` — Railway injects
+it and `next start` honors it. Generate a public URL under **Settings →
+Networking → Generate Domain**.
+
+### Persistent volume (required for data to survive deploys)
+
+The app stores everything in SQLite at `data/duro-tracks.db`, resolved relative
+to the working directory (`/app` on Railway → `/app/data/duro-tracks.db`).
+**Without a volume, that file lives on the container's ephemeral disk and is
+wiped on every redeploy/restart — you'd lose all synced transcripts and
+analysis and have to re-sync.**
+
+Attach a volume so it persists:
+
+1. On the project canvas, select the `duro-tracks` service → **Create** /
+   right-click → **Add Volume** (or **+ New → Volume**).
+2. Set the **Mount Path** to **`/app/data`** and attach it to the service.
+3. Railway redeploys once; from then on the SQLite DB survives deploys.
+
+A small volume (e.g. 1–5 GB) is plenty — transcripts are text. You're billed
+only for what's stored.
+
+### `MAX_DEALS`
+
+Controls how many accounts a sync processes: `1` for a cheap single-account
+test (one AI analysis), `0` for all qualifying accounts. The cap is applied
+before transcripts are fetched, so a low value also keeps syncs fast.
+

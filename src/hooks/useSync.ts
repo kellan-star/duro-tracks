@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { mutate } from "swr";
 import type { SyncStatus } from "@/lib/types";
 
 const SIXTY_MINUTES = 60 * 60 * 1000;
@@ -36,6 +37,9 @@ export function useSync() {
         throw new Error(data.error || "Sync failed");
       }
       setLastSyncAt(new Date().toISOString());
+      // Sync finished — revalidate every cached tab so the new results show
+      // without a manual page refresh.
+      await mutate(() => true);
     } catch (e) {
       setError(String(e));
     } finally {
