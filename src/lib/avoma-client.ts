@@ -13,30 +13,52 @@ async function avomaFetch<T>(path: string, params?: Record<string, string>): Pro
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
   }
 
-  for (let attempt = 0; attempt < 3; attempt++) {
+  const MAX_ATTEMPTS = 4;
+  const backoff = (attempt: number, retryAfter = 0) =>
+    new Promise((r) =>
+      setTimeout(r, retryAfter > 0 ? retryAfter * 1000 : Math.min(2000 * 2 ** attempt, 15000))
+    );
+
+  let lastError: unknown;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     await avomaRateLimiter.acquire();
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 20000);
+
+    let res: Response;
     try {
-      const res = await fetch(url.toString(), {
+      res = await fetch(url.toString(), {
         headers: { Authorization: `Bearer ${API_KEY}` },
         signal: controller.signal,
       });
-      if (res.status === 429) {
-        clearTimeout(timeout);
-        const waitSec = parseInt(res.headers.get("retry-after") || "10", 10);
-        await new Promise((r) => setTimeout(r, waitSec * 1000));
-        continue;
-      }
-      if (!res.ok) {
-        throw new Error(`Avoma API error ${res.status}: ${await res.text()}`);
-      }
-      return res.json();
-    } finally {
+    } catch (e) {
+      // Network error / timeout — retry with backoff.
       clearTimeout(timeout);
+      lastError = e;
+      await backoff(attempt);
+      continue;
     }
+    clearTimeout(timeout);
+
+    // Retry transient failures (rate limit + any 5xx) with backoff.
+    if (res.status === 429 || res.status >= 500) {
+      lastError = new Error(`Avoma API error ${res.status}`);
+      const retryAfter = parseInt(res.headers.get("retry-after") || "0", 10);
+      await backoff(attempt, retryAfter);
+      continue;
+    }
+
+    // Other non-OK responses (e.g. 401/403/404) are not retryable — fail fast.
+    if (!res.ok) {
+      throw new Error(`Avoma API error ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    }
+
+    return res.json();
   }
-  throw new Error(`Avoma API: max retries exceeded for ${path}`);
+
+  throw lastError instanceof Error
+    ? new Error(`Avoma API: ${lastError.message} (after ${MAX_ATTEMPTS} attempts) for ${path}`)
+    : new Error(`Avoma API: max retries exceeded for ${path}`);
 }
 
 export interface AvomaMeeting {
