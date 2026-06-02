@@ -21,14 +21,13 @@ export async function POST(request: Request) {
   // transcripts are unchanged; incremental/auto syncs omit it.
   const force = new URL(request.url).searchParams.get("force") === "1";
 
-  try {
-    const result = await runSync(force);
-    return NextResponse.json(result);
-  } catch (error) {
-    console.error("[duro-tracks] Sync failed:", error);
-    return NextResponse.json(
-      { error: "Sync failed", details: String(error).slice(0, 500) },
-      { status: 500 }
-    );
-  }
+  // Fire-and-forget: a full sync can run for many minutes (transcripts +
+  // per-account + aggregate AI), which would blow past the platform's request
+  // timeout and 502. runSync() sets the "syncing" flag synchronously before its
+  // first await, so the client can poll GET /api/sync and GET /api/progress.
+  void runSync(force).catch((e) => {
+    console.error("[duro-tracks] Sync failed:", e);
+  });
+
+  return NextResponse.json({ started: true }, { status: 202 });
 }

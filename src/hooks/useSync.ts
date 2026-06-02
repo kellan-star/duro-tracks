@@ -4,62 +4,99 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { mutate } from "swr";
 import type { SyncStatus } from "@/lib/types";
 
-const SIXTY_MINUTES = 60 * 60 * 1000;
+const AUTO_REFRESH_MS = 60 * 60 * 1000;
+const POLL_MS = 3000;
 
 export function useSync() {
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const autoRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const fetchStatus = useCallback(async () => {
-    try {
-      const res = await fetch("/api/sync");
-      if (res.ok) {
-        const data: SyncStatus = await res.json();
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
+  // Poll sync status until the server reports it's no longer syncing, then
+  // revalidate all tab data so the new results appear without a manual refresh.
+  const startPolling = useCallback(() => {
+    if (pollRef.current) return;
+    pollRef.current = setInterval(async () => {
+      try {
+        const data: SyncStatus = await fetch("/api/sync").then((r) => r.json());
         setLastSyncAt(data.lastSyncAt);
-        setIsSyncing(data.isSyncing);
+        if (!data.isSyncing) {
+          setIsSyncing(false);
+          stopPolling();
+          await mutate(() => true);
+        }
+      } catch {
+        // transient — keep polling
       }
-    } catch {
-      // ignore status fetch errors
-    }
-  }, []);
+    }, POLL_MS);
+  }, [stopPolling]);
 
-  // Manual sync forces a full re-analysis (force=true); the auto-refresh below
-  // runs an incremental sync (force=false).
-  const triggerSync = useCallback(async (force = true) => {
-    setIsSyncing(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/sync${force ? "?force=1" : ""}`, { method: "POST" });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Sync failed");
+  // Manual sync forces a full re-analysis (force=true); the auto-refresh runs
+  // an incremental sync (force=false). The request returns immediately (202);
+  // progress is tracked by polling.
+  const triggerSync = useCallback(
+    async (force = true) => {
+      setError(null);
+      setIsSyncing(true);
+      try {
+        const res = await fetch(`/api/sync${force ? "?force=1" : ""}`, { method: "POST" });
+        // 202 = started; 409 = already running. Either way, poll for completion.
+        if (!res.ok && res.status !== 409) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || `Sync failed (${res.status})`);
+        }
+        startPolling();
+      } catch (e) {
+        setError(String(e));
+        setIsSyncing(false);
       }
-      setLastSyncAt(new Date().toISOString());
-      // Sync finished — revalidate every cached tab so the new results show
-      // without a manual page refresh.
-      await mutate(() => true);
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setIsSyncing(false);
-    }
-  }, []);
+    },
+    [startPolling]
+  );
 
+  // On mount: load status, and resume polling if a sync is already running
+  // (e.g. started in another tab or before a page reload).
   useEffect(() => {
-    fetchStatus();
-  }, [fetchStatus]);
-
-  // 60-minute auto-refresh
-  useEffect(() => {
-    intervalRef.current = setInterval(() => {
-      if (!isSyncing) triggerSync(false);
-    }, SIXTY_MINUTES);
+    let cancelled = false;
+    (async () => {
+      try {
+        const data: SyncStatus = await fetch("/api/sync").then((r) => r.json());
+        if (cancelled) return;
+        setLastSyncAt(data.lastSyncAt);
+        if (data.isSyncing) {
+          setIsSyncing(true);
+          startPolling();
+        }
+      } catch {
+        // ignore
+      }
+    })();
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      cancelled = true;
+    };
+  }, [startPolling]);
+
+  // Periodic incremental auto-refresh while the dashboard is open.
+  useEffect(() => {
+    autoRef.current = setInterval(() => {
+      if (!isSyncing) triggerSync(false);
+    }, AUTO_REFRESH_MS);
+    return () => {
+      if (autoRef.current) clearInterval(autoRef.current);
     };
   }, [isSyncing, triggerSync]);
+
+  // Cleanup polling on unmount.
+  useEffect(() => stopPolling, [stopPolling]);
 
   return { lastSyncAt, isSyncing, triggerSync, error };
 }
