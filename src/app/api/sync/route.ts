@@ -9,7 +9,7 @@ export async function GET() {
   });
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   if (isSyncing()) {
     return NextResponse.json(
       { error: "Sync already in progress" },
@@ -17,8 +17,12 @@ export async function POST() {
     );
   }
 
+  // Manual "Sync now" passes ?force=1 to re-run all analysis even when
+  // transcripts are unchanged; incremental/auto syncs omit it.
+  const force = new URL(request.url).searchParams.get("force") === "1";
+
   try {
-    const result = await runSync();
+    const result = await runSync(force);
     return NextResponse.json(result);
   } catch (error) {
     console.error("[duro-tracks] Sync failed:", error);

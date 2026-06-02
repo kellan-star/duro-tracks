@@ -379,6 +379,16 @@ export function getTotalTranscripts(): number {
   return row.cnt;
 }
 
+// Number of accounts that have an individual AI analysis stored — this is also
+// the set fed into the cross-account (aggregate) analysis.
+export function getAnalyzedAccountCount(): number {
+  const db = getDb();
+  const row = db
+    .prepare("SELECT COUNT(*) as cnt FROM analysis_results")
+    .get() as { cnt: number };
+  return row.cnt;
+}
+
 // --- Aggregate Insights ---
 
 export function saveAggregateInsight(

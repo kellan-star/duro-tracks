@@ -26,7 +26,7 @@ export function Header({ lastSyncAt, isSyncing, onSync }: HeaderProps) {
               {lastSyncAt ? new Date(lastSyncAt).toLocaleString() : "Never"}
             </span>
           </div>
-          <button className="sync-btn" onClick={onSync} disabled={isSyncing}>
+          <button className="sync-btn" onClick={() => onSync()} disabled={isSyncing}>
             <svg
               width="13"
               height="13"

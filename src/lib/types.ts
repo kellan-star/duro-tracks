@@ -191,6 +191,7 @@ export interface AccountsTabData {
   metadata: {
     totalAccounts: number;
     totalTranscripts: number;
+    totalAnalyzed: number;
     lastSyncAt: string | null;
     refreshedAt: string;
   };
