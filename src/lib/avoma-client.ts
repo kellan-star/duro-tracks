@@ -166,10 +166,8 @@ export async function fetchNotesForMeeting(
   fromDate: string,
   toDate: string
 ): Promise<AvomaNote[]> {
-  const cacheKey = `notes:${meetingUuid}`;
-  const cached = getCached<AvomaNote[]>(cacheKey);
-  if (cached) return cached;
-
+  // Not cached: fetched at most once per meeting per sync and stored in SQLite;
+  // caching every blob would grow memory over a large sync.
   try {
     const res = await avomaFetch<PaginatedResponse<AvomaNote>>("/v1/notes/", {
       meeting_uuid: meetingUuid,
@@ -178,7 +176,6 @@ export async function fetchNotesForMeeting(
       to_date: toDate,
       page_size: "20",
     });
-    setCache(cacheKey, res.results, CACHE_TTL_15MIN);
     return res.results;
   } catch {
     return [];
@@ -206,10 +203,7 @@ export interface AvomaTranscription {
 export async function fetchTranscriptionForMeeting(
   meetingUuid: string
 ): Promise<string | null> {
-  const cacheKey = `transcript:${meetingUuid}`;
-  const cached = getCached<string>(cacheKey);
-  if (cached) return cached;
-
+  // Not cached: fetched at most once per meeting per sync and stored in SQLite.
   try {
     const res = await avomaFetch<
       PaginatedResponse<AvomaTranscription> | AvomaTranscription
@@ -227,11 +221,7 @@ export async function fetchTranscriptionForMeeting(
       return null;
     }
 
-    if (text.trim()) {
-      setCache(cacheKey, text, CACHE_TTL_15MIN);
-      return text;
-    }
-    return null;
+    return text.trim() ? text : null;
   } catch {
     return null;
   }
