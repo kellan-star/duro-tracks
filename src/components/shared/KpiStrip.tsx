@@ -10,7 +10,7 @@ export function KpiStrip() {
 
   const accounts = accountData?.accounts || [];
   const totalAccounts = accountData?.metadata.totalAccounts ?? 0;
-  const totalTranscripts = accountData?.metadata.totalTranscripts ?? 0;
+  const totalAnalyzed = accountData?.metadata.totalAnalyzed ?? 0;
 
   // Avg coverage = mean of (AD + VM + MP) / 3 across all accounts.
   const avgCoverage =
@@ -46,9 +46,9 @@ export function KpiStrip() {
         <span style={subStyle}>prospect domains</span>
       </div>
       <div className="kpi-cell" style={cellStyle}>
-        <span style={labelStyle}>Call transcripts</span>
-        <span className="num" style={valueStyle}>{totalTranscripts}</span>
-        <span style={subStyle}>stored in database</span>
+        <span style={labelStyle}>Accounts analyzed</span>
+        <span className="num" style={valueStyle}>{totalAnalyzed}</span>
+        <span style={subStyle}>individual + cross-account AI</span>
       </div>
       <div className="kpi-cell" style={cellStyle}>
         <span style={labelStyle}>Avg coverage</span>

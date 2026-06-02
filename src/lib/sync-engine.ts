@@ -51,21 +51,23 @@ function getTrackedRepEmails(
   return Array.from(primaries);
 }
 
-export async function runSync(): Promise<SyncResult> {
+export async function runSync(force = false): Promise<SyncResult> {
   if (isSyncing()) {
     return { newMeetings: 0, newTranscripts: 0, accountsAnalyzed: 0, totalAccounts: 0 };
   }
 
   setSyncing(true);
   try {
-    return await doSync();
+    return await doSync(force);
   } finally {
     setSyncing(false);
     resetProgress();
   }
 }
 
-async function doSync(): Promise<SyncResult> {
+// `force` (manual "Sync now") re-runs per-account + cross-account analysis even
+// when transcripts are unchanged. Auto/incremental syncs leave it false.
+async function doSync(force: boolean): Promise<SyncResult> {
   updateProgress("Starting", "Fetching Avoma meetings...", 5);
 
   const now = new Date();
@@ -127,47 +129,55 @@ async function doSync(): Promise<SyncResult> {
     `[duro-tracks] ${relevantMeetings.length} meetings with tracked reps (of ${avomaMeetings.length} total)`
   );
 
-  // Upsert calls and identify new ones needing transcripts
-  let newMeetingCount = 0;
-  const newMeetingUuids: string[] = [];
+  // Group relevant meetings by prospect domain WITHOUT writing yet, so the
+  // MAX_DEALS cap is applied BEFORE we store calls / fetch transcripts /
+  // analyze. (Otherwise we'd fetch transcripts for every domain but only build
+  // accounts for the capped few — slow, and it crowds out the analysis step.)
   const domainMeetings = new Map<string, AvomaMeeting[]>();
-
   for (const meeting of relevantMeetings) {
     const attendees = (meeting.attendees || []).map((a) => ({
       email: a.email?.toLowerCase() || "",
       name: a.name,
     }));
-    const trackedReps = getTrackedRepEmails(attendees);
-    const externalDomains = getExternalCorporateDomains(attendees);
-    const accountDomain = externalDomains[0] || null;
-
+    const accountDomain = getExternalCorporateDomains(attendees)[0] || null;
     if (!accountDomain) continue;
-
-    const isNew = !callExists(meeting.uuid);
-
-    upsertCall({
-      meetingUuid: meeting.uuid,
-      subject: meeting.subject || "",
-      startAt: meeting.start_at || meeting.created,
-      organizerEmail: meeting.organizer_email || "",
-      attendeesJson: JSON.stringify(attendees),
-      accountDomain,
-      trackedRepEmailsJson: JSON.stringify(trackedReps),
-    });
-
-    if (isNew) {
-      newMeetingCount++;
-      newMeetingUuids.push(meeting.uuid);
-    }
-
     const existing = domainMeetings.get(accountDomain) || [];
     existing.push(meeting);
     domainMeetings.set(accountDomain, existing);
   }
 
-  // Apply MAX_DEALS limit to domains
+  // Apply the MAX_DEALS limit to domains; everything below is scoped to these.
   const allDomains = Array.from(domainMeetings.keys());
   const limitedDomains = allDomains.slice(0, maxDeals);
+
+  // Upsert calls (only for the limited domains) and identify new ones.
+  let newMeetingCount = 0;
+  const newMeetingUuids: string[] = [];
+  for (const domain of limitedDomains) {
+    for (const meeting of domainMeetings.get(domain) || []) {
+      const attendees = (meeting.attendees || []).map((a) => ({
+        email: a.email?.toLowerCase() || "",
+        name: a.name,
+      }));
+      const trackedReps = getTrackedRepEmails(attendees);
+      const isNew = !callExists(meeting.uuid);
+
+      upsertCall({
+        meetingUuid: meeting.uuid,
+        subject: meeting.subject || "",
+        startAt: meeting.start_at || meeting.created,
+        organizerEmail: meeting.organizer_email || "",
+        attendeesJson: JSON.stringify(attendees),
+        accountDomain: domain,
+        trackedRepEmailsJson: JSON.stringify(trackedReps),
+      });
+
+      if (isNew) {
+        newMeetingCount++;
+        newMeetingUuids.push(meeting.uuid);
+      }
+    }
+  }
 
   // Fetch transcripts: new meetings + retry any calls that are still missing transcripts
   const callsMissingTranscripts = getCallsMissingTranscripts();
@@ -271,10 +281,12 @@ async function doSync(): Promise<SyncResult> {
     });
   }
 
-  // Run AI analysis for accounts needing it
-  const accountsToAnalyze = getAccountsNeedingAnalysis().filter((d) =>
-    limitedDomains.includes(d)
-  );
+  // Run AI analysis. A forced (manual) sync re-analyzes every in-scope account;
+  // otherwise only those flagged as needing re-analysis.
+  const limitedSet = new Set(limitedDomains);
+  const accountsToAnalyze = force
+    ? limitedDomains
+    : getAccountsNeedingAnalysis().filter((d) => limitedSet.has(d));
 
   let accountsAnalyzed = 0;
   updateProgress(
@@ -303,7 +315,8 @@ async function doSync(): Promise<SyncResult> {
     const hash = computeTranscriptHash(transcripts);
     const existingHash = getAnalysisHash(domain);
 
-    if (hash === existingHash) {
+    // Skip re-analysis when transcripts are unchanged — unless forced.
+    if (!force && hash === existingHash) {
       markAccountAnalyzed(domain);
       continue;
     }

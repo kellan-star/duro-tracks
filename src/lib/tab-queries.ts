@@ -5,6 +5,7 @@ import {
   getRepTranscriptCounts,
   getRepAccountDomains,
   getTotalTranscripts,
+  getAnalyzedAccountCount,
   getLastSyncTimestamp,
   getAggregateInsight,
   type AccountRow,
@@ -87,6 +88,7 @@ export function queryAccountsTab(): AccountsTabData {
     metadata: {
       totalAccounts: accounts.length,
       totalTranscripts: getTotalTranscripts(),
+      totalAnalyzed: getAnalyzedAccountCount(),
       lastSyncAt: getLastSyncTimestamp(),
       refreshedAt: new Date().toISOString(),
     },

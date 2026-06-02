@@ -24,11 +24,13 @@ export function useSync() {
     }
   }, []);
 
-  const triggerSync = useCallback(async () => {
+  // Manual sync forces a full re-analysis (force=true); the auto-refresh below
+  // runs an incremental sync (force=false).
+  const triggerSync = useCallback(async (force = true) => {
     setIsSyncing(true);
     setError(null);
     try {
-      const res = await fetch("/api/sync", { method: "POST" });
+      const res = await fetch(`/api/sync${force ? "?force=1" : ""}`, { method: "POST" });
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error || "Sync failed");
@@ -48,7 +50,7 @@ export function useSync() {
   // 60-minute auto-refresh
   useEffect(() => {
     intervalRef.current = setInterval(() => {
-      if (!isSyncing) triggerSync();
+      if (!isSyncing) triggerSync(false);
     }, SIXTY_MINUTES);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
