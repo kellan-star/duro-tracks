@@ -88,22 +88,34 @@ function parseAccountDiscovery(raw: Record<string, string>): AccountDiscovery {
   return result;
 }
 
-function parseValueMapEntry(raw: Record<string, string> | undefined): ValueMapEntry {
-  if (!raw) return { persona: "", jobsToBeDone: "", valueUnlocked: "" };
+// Case-insensitive map of an object's keys → values (tolerates "PLM" vs "plm",
+// "JobsToBeDone" vs "jobsToBeDone", etc. that models occasionally emit).
+function lowerKeyed(raw: unknown): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (raw && typeof raw === "object") {
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      out[k.toLowerCase()] = v;
+    }
+  }
+  return out;
+}
+
+function parseValueMapEntry(raw: unknown): ValueMapEntry {
+  const m = lowerKeyed(raw);
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
   return {
-    persona: typeof raw.persona === "string" ? raw.persona : "",
-    jobsToBeDone: typeof raw.jobsToBeDone === "string" ? raw.jobsToBeDone : "",
-    valueUnlocked: typeof raw.valueUnlocked === "string" ? raw.valueUnlocked : "",
+    persona: str(m["persona"]),
+    jobsToBeDone: str(m["jobstobedone"] ?? m["jobs"]),
+    valueUnlocked: str(m["valueunlocked"] ?? m["value"]),
   };
 }
 
-function parseValueMap(raw: Record<string, Record<string, string>> | undefined): ValueMap {
-  if (!raw) return JSON.parse(JSON.stringify(EMPTY_VALUE_MAP));
+function parseValueMap(raw: unknown): ValueMap {
   const result = JSON.parse(JSON.stringify(EMPTY_VALUE_MAP)) as ValueMap;
+  const m = lowerKeyed(raw);
   for (const appKey of VALUE_MAP_APP_KEYS) {
-    if (raw[appKey]) {
-      result[appKey] = parseValueMapEntry(raw[appKey]);
-    }
+    const entry = m[appKey.toLowerCase()];
+    if (entry) result[appKey] = parseValueMapEntry(entry);
   }
   return result;
 }

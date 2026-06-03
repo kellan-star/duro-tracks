@@ -39,7 +39,13 @@ Use bullet points (with "• " prefix) for multiple items. Each bullet item shou
 
 **companyPriorities**: What business goals is the customer or prospect aiming to achieve (e.g., 20% reduction in costs, double production volume, hit a launch date)? Only include goals stated by prospect employees.
 
-**competitiveEnvironment**: Which non-Duro tools is the PROSPECT currently using or considering for managing their BOM, changes, and product data (e.g., spreadsheets, shared drives, Arena, Teamcenter, Oracle Agile, Propel, Upchain)? Include version numbers or editions if mentioned. Do NOT list Duro here.
+**competitiveEnvironment**: Which non-Duro tools is the PROSPECT currently using or evaluating for managing their BOM, change orders, and product data? Focus on these primary competitive options:
+- Enterprise PLMs (Teamcenter, Windchill, Oracle Agile, 3DEXPERIENCE)
+- Arena PLM
+- Spreadsheets and manual processes (Excel, Google Sheets)
+- Shared drives and cloud storage (SharePoint, Google Drive, Dropbox, OneDrive)
+
+Capture which of these (or other PLM tools such as Propel, Upchain, Fusion 360 Manage) the prospect uses or is evaluating, including editions/versions if mentioned. **IMPORTANT: Altium Designer and Altium 365 are NOT competitors — never list them here** (Altium is Duro's parent). This field is about the prospect's current/alternative product-data tooling only.
 
 **urgency**: Why does the PROSPECT need to make a change now? What business event, deadline, funding milestone, audit, or consequence is driving their timeline? If no urgency was expressed, leave blank — do not invent urgency.
 
@@ -55,11 +61,11 @@ Use bullet points (with "• " prefix) for multiple items. Each bullet item shou
 
 ## Framework 2: Value Map
 
-For the single product **PLM** below, extract information about three dimensions. Only populate a cell if the prospect specifically discussed needs, workflows, or value related to the product's capabilities. Do NOT fill cells based on what Duro reps pitched — only what the PROSPECT expressed as a need or interest.
+For the single product **PLM**, fill the three cells below from what the PROSPECT actually said. Ground every answer in the prospect's own words/context; do NOT fill a cell from what a Duro rep pitched. Use a cell's empty string only if the call genuinely contains nothing for it.
 
-- **persona**: Who at the PROSPECT company would use this product? Include their actual name, role, or title if mentioned. Do NOT list Duro employees.
-- **jobsToBeDone**: What specific tasks or pain points did the PROSPECT describe that this product would address?
-- **valueUnlocked**: What specific improvement or outcome did the PROSPECT say they expect? Use their words and numbers when possible.
+- **persona**: Who is the specific stakeholder at the PROSPECT who owns this problem? Name the role/title (e.g., Procurement Manager, Systems Architect, Hardware Engineering Lead, Operations / Supply Chain Lead) and their actual name if mentioned. Do NOT list Duro employees.
+- **jobsToBeDone**: What specific task is the prospect failing at today because of manual processes or their current tools — described in their own context? Be concrete (e.g., "checking lead times across 500+ components manually," "reconciling BOM revisions across Excel files between mechanical and electrical").
+- **valueUnlocked**: The specific value the prospect would gain by solving it with PLM, as a financial or KPI outcome where possible (e.g., time saved per change order, fewer BOM/scrap errors, faster release cycles, reduced rework). Use their words and numbers when available.
 
 ### Product:
 
