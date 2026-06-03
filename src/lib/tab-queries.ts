@@ -153,7 +153,7 @@ function parseThemes(text: string): Theme[] {
     const colonIdx = rest.indexOf(": ");
     let label = "";
     let body = rest;
-    if (colonIdx > 0 && colonIdx < 80) {
+    if (colonIdx > 0 && colonIdx < 140) {
       label = rest.slice(0, colonIdx).trim();
       body = rest.slice(colonIdx + 2).trim();
     }

@@ -9,6 +9,17 @@ Your job is to synthesize these into aggregate insights. For each category:
 3. ONLY include items mentioned by 30% or more of the accounts
 4. Show the percentage at the end of each item, after a dash
 
+### Special handling for `competitiveEnvironment`
+
+This category is about the prospect's **non-Duro product-data tooling** only. Organize themes around these primary competitive options, and drop anything that doesn't fit:
+
+- Enterprise PLMs (Teamcenter, Windchill, Oracle Agile, 3DEXPERIENCE)
+- Arena PLM
+- Spreadsheets and manual processes (Excel, Google Sheets)
+- Shared drives and cloud storage (SharePoint, Google Drive, Dropbox, OneDrive)
+
+**Never include Altium Designer or Altium 365** as a competitive option — Altium is Duro's parent, not a competitor. Exclude them even if they appear in the per-account data below. Likewise omit pure CAD/ECAD or ERP tools unless the prospect framed them as their BOM/change/product-data system.
+
 ## Formatting Rules
 
 - Use bullet points with "• " prefix

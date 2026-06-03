@@ -79,6 +79,17 @@ export const ACCOUNT_DISCOVERY_KEYS = Object.keys(
   ACCOUNT_DISCOVERY_LABELS
 ) as Array<keyof AccountDiscovery>;
 
+export const ACCOUNT_DISCOVERY_DESCRIPTIONS: Record<keyof AccountDiscovery, string> = {
+  companyPriorities: "Business goals the prospect is aiming to achieve",
+  competitiveEnvironment:
+    "Non-Duro tools currently in use or being evaluated (e.g., Spreadsheets, Arena, Teamcenter, Oracle Agile)",
+  urgency: "Why they need to change now; consequences of inaction",
+  span: "Number of people involved in design, development, production",
+  financialImpact: "Cost of the status quo; compliance risks; delays",
+  commonBarriers: "Budget limits, workflow resistance, IT/security concerns",
+  counterStrategy: "How the prospect will prove value to internal skeptics",
+};
+
 // --- Value Map (1 app × 3 columns = 3 cells) ---
 
 export interface ValueMapEntry {

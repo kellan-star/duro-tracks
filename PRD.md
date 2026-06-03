@@ -96,7 +96,7 @@ account, using the full concatenated transcript text.
 | Question | Description |
 | --- | --- |
 | Company Priorities | Business goals the prospect is aiming to achieve |
-| Competitive Environment | Non-Duro tools currently in use or being evaluated (e.g., Spreadsheets, Arena, Teamcenter, Oracle Agile) |
+| Competitive Environment | Non-Duro product-data tooling currently in use or being evaluated, grouped into the primary competitive options: Enterprise PLMs (Teamcenter, Windchill, Oracle Agile, 3DEXPERIENCE); Arena PLM; Spreadsheets and manual processes (Excel, Google Sheets); Shared drives and cloud storage (SharePoint, Google Drive, Dropbox, OneDrive). **Altium Designer and Altium 365 are explicitly NOT competitors** (Altium is Duro's parent) and are never listed here. |
 | Urgency | Why they need to change now; consequences of inaction |
 | Span | Number of people involved in design, development, production |
 | Financial & Operational Impact | Cost of the status quo; compliance risks; delays |

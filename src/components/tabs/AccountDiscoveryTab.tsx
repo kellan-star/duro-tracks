@@ -2,6 +2,7 @@
 
 import { useAccountDiscovery } from "@/hooks/useAccountDiscovery";
 import { ThemeRow } from "@/components/shared/ThemeRow";
+import { ACCOUNT_DISCOVERY_DESCRIPTIONS, type AccountDiscovery } from "@/lib/types";
 
 function DiscoveryIcon({ title }: { title: string }) {
   const lower = title.toLowerCase();
@@ -58,12 +59,19 @@ export function AccountDiscoveryTab() {
         <div className="insight-grid">
           {data.sections.map((section) => (
             <div key={section.key} className="insight-card">
-              <div className="insight-head">
-                <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 15, fontWeight: 600, letterSpacing: "-0.01em" }}>
+              <div className="insight-head" style={{ alignItems: "flex-start" }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
                   <DiscoveryIcon title={section.label} />
-                  <span>{section.label}</span>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                    <span style={{ fontSize: 15, fontWeight: 600, letterSpacing: "-0.01em" }}>
+                      {section.label}
+                    </span>
+                    <span style={{ fontSize: 11.5, color: "var(--text-3)", lineHeight: 1.4 }}>
+                      {ACCOUNT_DISCOVERY_DESCRIPTIONS[section.key as keyof AccountDiscovery]}
+                    </span>
+                  </div>
                 </div>
-                <span style={{ fontSize: 11.5, color: "var(--text-3)" }}>
+                <span style={{ fontSize: 11.5, color: "var(--text-3)", whiteSpace: "nowrap", paddingLeft: 8 }}>
                   {section.themes.length} {section.themes.length === 1 ? "theme" : "themes"}
                 </span>
               </div>
