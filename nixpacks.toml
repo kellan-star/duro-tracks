@@ -5,4 +5,7 @@ aptPkgs = ["python3", "make", "g++"]
 cmds = ["npm ci", "npm run build"]
 
 [start]
-cmd = "npm start"
+# Run Next directly (not via `npm start`) so SIGTERM on redeploy is handled
+# gracefully and exits 0 — otherwise npm reports "signal SIGTERM" as a non-zero
+# exit and Railway flags every rolling redeploy as a crash.
+cmd = "node_modules/.bin/next start"
