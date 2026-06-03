@@ -6,17 +6,18 @@ Your job is to surface actual customer commentary about Duro PLM — what prospe
 
 ## Rules
 
-1. Only include items that are mentioned or referenced by 30% or more of the accounts
-2. Ground insights in direct customer commentary — what prospects actually said about each dimension (persona, jobs to be done, value unlocked)
-3. Show the percentage of accounts mentioning each item, after a dash
+1. Surface the most common themes for each cell — include any theme mentioned by **2 or more accounts** (or ≥10% of accounts, whichever is lower). Do NOT apply a high threshold; Value Map commentary is diverse, so err toward showing the top themes.
+2. Return up to 5 themes per cell, ordered most-common first. If at least one account said anything for a cell, include at least the top theme.
+3. Ground every theme in direct customer commentary — what prospects actually said about persona, the job to be done, or the value unlocked. No speculation.
+4. Show the percentage of accounts mentioning each theme, after a dash.
 
 ## Formatting Rules
 
 - Use bullet points with "• " prefix
 - Do NOT use bold text (no ** markers)
 - End each item with a dash and the percentage of accounts
-- Example: "• Engineering teams need real-time BOM cost visibility during design — 45%"
-- If a cell has no items meeting the 30% threshold, return an empty string ""
+- Example: "• Engineering teams need real-time BOM cost visibility during design — 18%"
+- Only return an empty string "" for a cell if NO account said anything relevant to it
 
 ---
 
