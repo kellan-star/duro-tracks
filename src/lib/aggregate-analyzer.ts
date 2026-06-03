@@ -180,14 +180,26 @@ export async function runAggregateAnalysis(): Promise<void> {
       .replace("{DATA}", vmData)
       .replace("{FORMAT}", vmFormat);
     const vmResponse = await callClaude(vmPrompt, "Value Map");
-    const vmParsed = extractJson(vmResponse) as Record<string, string>;
+    const vmParsed = extractJson(vmResponse) as Record<string, unknown>;
+
+    // Tolerate both the requested flat keys ("plm.persona") and a nested
+    // object ({ plm: { persona: ... } }) that the model may emit instead.
+    const vmGet = (appKey: string, colKey: string): string => {
+      const flat = vmParsed[`${appKey}.${colKey}`];
+      if (typeof flat === "string") return flat;
+      const nested = vmParsed[appKey];
+      if (nested && typeof nested === "object") {
+        const v = (nested as Record<string, unknown>)[colKey];
+        if (typeof v === "string") return v;
+      }
+      return "";
+    };
 
     const vmResult: Record<string, Record<string, string>> = {};
     for (const appKey of VALUE_MAP_APP_KEYS) {
       vmResult[appKey] = {};
       for (const colKey of VALUE_MAP_COLUMN_KEYS) {
-        const flatKey = `${appKey}.${colKey}`;
-        vmResult[appKey][colKey] = typeof vmParsed[flatKey] === "string" ? vmParsed[flatKey] : "";
+        vmResult[appKey][colKey] = vmGet(appKey, colKey);
       }
     }
     saveAggregateInsight("valueMap", JSON.stringify(vmResult), accountCount);
