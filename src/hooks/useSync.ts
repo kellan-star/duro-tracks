@@ -4,15 +4,40 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { mutate } from "swr";
 import type { SyncStatus } from "@/lib/types";
 
-const AUTO_REFRESH_MS = 60 * 60 * 1000;
 const POLL_MS = 3000;
+// How often we check whether it's time for the daily 6am-ET sync.
+const DAILY_CHECK_MS = 10 * 60 * 1000;
+
+// The most recent 6:00am America/New_York instant (UTC ms) that has passed.
+// Derived from the actual ET wall clock, so it's correct across DST.
+function mostRecent6amEtMs(nowMs: number): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).formatToParts(new Date(nowMs));
+  const val = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? "0");
+  const h = val("hour") % 24;
+  const secsSinceEtMidnight = h * 3600 + val("minute") * 60 + val("second");
+  const secsSince6am = secsSinceEtMidnight - 6 * 3600;
+  const offset = secsSince6am >= 0 ? secsSince6am : secsSince6am + 24 * 3600;
+  return nowMs - offset * 1000;
+}
 
 export function useSync() {
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const autoRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Refs mirror the latest state so the stable daily-check interval can read
+  // current values without being torn down/recreated on every change.
+  const lastSyncRef = useRef<string | null>(null);
+  const syncingRef = useRef(false);
+  lastSyncRef.current = lastSyncAt;
+  syncingRef.current = isSyncing;
 
   const stopPolling = useCallback(() => {
     if (pollRef.current) {
@@ -40,7 +65,7 @@ export function useSync() {
     }, POLL_MS);
   }, [stopPolling]);
 
-  // Manual sync forces a full re-analysis (force=true); the auto-refresh runs
+  // Manual sync forces a full re-analysis (force=true); the daily auto-sync runs
   // an incremental sync (force=false). The request returns immediately (202);
   // progress is tracked by polling.
   const triggerSync = useCallback(
@@ -63,8 +88,18 @@ export function useSync() {
     [startPolling]
   );
 
-  // On mount: load status, and resume polling if a sync is already running
-  // (e.g. started in another tab or before a page reload).
+  // Fire the daily incremental sync if there hasn't been one since the most
+  // recent 6am ET.
+  const maybeDailySync = useCallback(() => {
+    if (syncingRef.current) return;
+    const last = lastSyncRef.current ? new Date(lastSyncRef.current).getTime() : 0;
+    if (last < mostRecent6amEtMs(Date.now())) {
+      triggerSync(false);
+    }
+  }, [triggerSync]);
+
+  // On mount: load status, resume polling if a sync is already running, then
+  // run the daily check.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -75,6 +110,8 @@ export function useSync() {
         if (data.isSyncing) {
           setIsSyncing(true);
           startPolling();
+        } else {
+          maybeDailySync();
         }
       } catch {
         // ignore
@@ -83,17 +120,13 @@ export function useSync() {
     return () => {
       cancelled = true;
     };
-  }, [startPolling]);
+  }, [startPolling, maybeDailySync]);
 
-  // Periodic incremental auto-refresh while the dashboard is open.
+  // Daily 6am-ET auto-sync check while the dashboard is open.
   useEffect(() => {
-    autoRef.current = setInterval(() => {
-      if (!isSyncing) triggerSync(false);
-    }, AUTO_REFRESH_MS);
-    return () => {
-      if (autoRef.current) clearInterval(autoRef.current);
-    };
-  }, [isSyncing, triggerSync]);
+    const id = setInterval(maybeDailySync, DAILY_CHECK_MS);
+    return () => clearInterval(id);
+  }, [maybeDailySync]);
 
   // Cleanup polling on unmount.
   useEffect(() => stopPolling, [stopPolling]);
