@@ -102,6 +102,10 @@ per account over its transcript. To keep spend down:
   (`ANALYSIS_MODEL`), cross-account synthesis on **Sonnet** (`AGGREGATE_MODEL`).
 - **Prompt caching**: the per-account framework prompt is sent as a cached
   system block, so it's ~90% cheaper on every call after the first.
+- **Batch API** (`BATCH_ANALYSIS=1`, default): per-account analysis is submitted
+  as one Anthropic Message Batch — ~50% cheaper and no rate-limit pacing. The
+  sync waits for the batch to finish (progress shows "AI Analysis (batch)").
+  Set `BATCH_ANALYSIS=0` for sequential live calls.
 - `MAX_DEALS` caps how many accounts a sync processes.
 
 ## Deployment (Railway)
