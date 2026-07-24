@@ -34,7 +34,9 @@ function loadPrompt(filename: string): string {
 }
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY || "" });
-const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
+// Cross-account synthesis is more nuanced — default to Sonnet.
+const MODEL =
+  process.env.AGGREGATE_MODEL || process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
 
 function extractJson(text: string): Record<string, unknown> {
   const jsonMatch = text.match(/\{[\s\S]*\}/);

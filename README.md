@@ -82,10 +82,27 @@ Without API keys the app still builds and runs — the dashboard renders empty;
 
 | Endpoint | Method | Purpose |
 | --- | --- | --- |
-| `/api/sync` | POST | Trigger a sync |
+| `/api/sync` | POST | Trigger a sync (`?force=1` re-analyzes all in-scope accounts) |
 | `/api/sync` | GET | Sync status (`lastSyncAt`, `isSyncing`) |
 | `/api/progress` | GET | Poll sync progress |
+| `/api/aggregate` | POST | Re-run only the cross-account aggregates over existing analyses |
 | `/api/reset` | POST | Clear all database tables |
+
+## Controlling AI cost
+
+AI (Anthropic) tokens are almost entirely the per-account extraction — one call
+per account over its transcript. To keep spend down:
+
+- **Don't re-analyze unless transcripts changed.** The incremental sync
+  (daily 6am ET, or a non-forced `POST /api/sync`) skips unchanged accounts via
+  a transcript hash. Use `POST /api/aggregate` to re-tune the cross-account
+  prompts/thresholds **without** re-analyzing any accounts. Reserve
+  `POST /api/sync?force=1` for per-account prompt changes or a full rebuild.
+- **Model tiering** (defaults): per-account extraction runs on **Haiku**
+  (`ANALYSIS_MODEL`), cross-account synthesis on **Sonnet** (`AGGREGATE_MODEL`).
+- **Prompt caching**: the per-account framework prompt is sent as a cached
+  system block, so it's ~90% cheaper on every call after the first.
+- `MAX_DEALS` caps how many accounts a sync processes.
 
 ## Deployment (Railway)
 
