@@ -15,7 +15,10 @@ import {
 } from "./types";
 import { anthropicRateLimiter } from "./rate-limiter";
 
-const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6";
+// Per-account extraction is a structured task — default to Haiku (much cheaper).
+// Override with ANALYSIS_MODEL, or ANTHROPIC_MODEL to set both tiers at once.
+const ANALYSIS_MODEL =
+  process.env.ANALYSIS_MODEL || process.env.ANTHROPIC_MODEL || "claude-haiku-4-5-20251001";
 
 let promptCache: string | null = null;
 
@@ -54,12 +57,17 @@ async function callWithRetry(
     try {
       await anthropicRateLimiter.acquire();
       const result = await client.messages.create({
-        model: MODEL,
+        model: ANALYSIS_MODEL,
         max_tokens: 4096,
+        // The framework prompt is identical across all accounts, so cache it as
+        // a system block — subsequent calls reuse it at ~90% lower input cost.
+        system: [
+          { type: "text", text: loadPrompt(), cache_control: { type: "ephemeral" } },
+        ],
         messages: [
           {
             role: "user",
-            content: `${loadPrompt()}\n\n---\n\n## Call Transcripts for "${companyName}"\n\n${transcriptText}`,
+            content: `## Call Transcripts for "${companyName}"\n\n${transcriptText}`,
           },
         ],
       });
