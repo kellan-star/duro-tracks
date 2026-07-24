@@ -59,17 +59,8 @@ async function callWithRetry(
       const result = await client.messages.create({
         model: ANALYSIS_MODEL,
         max_tokens: 4096,
-        // The framework prompt is identical across all accounts, so cache it as
-        // a system block — subsequent calls reuse it at ~90% lower input cost.
-        system: [
-          { type: "text", text: loadPrompt(), cache_control: { type: "ephemeral" } },
-        ],
-        messages: [
-          {
-            role: "user",
-            content: `## Call Transcripts for "${companyName}"\n\n${transcriptText}`,
-          },
-        ],
+        system: systemBlocks(),
+        messages: [{ role: "user", content: userContent(companyName, transcriptText) }],
       });
       return result.content[0].type === "text" ? result.content[0].text : "";
     } catch (error: unknown) {
@@ -142,50 +133,125 @@ export function computeTranscriptHash(texts: string[]): string {
   return hash.digest("hex");
 }
 
+const MAX_TRANSCRIPT_CHARS = 100000;
+
+function truncateTranscripts(transcriptTexts: string[]): string {
+  const combined = transcriptTexts.join("\n\n---\n\n");
+  return combined.length > MAX_TRANSCRIPT_CHARS
+    ? combined.slice(0, MAX_TRANSCRIPT_CHARS) + "\n\n[Transcripts truncated]"
+    : combined;
+}
+
+function userContent(companyName: string, transcriptText: string): string {
+  return `## Call Transcripts for "${companyName}"\n\n${transcriptText}`;
+}
+
+// System block is identical across accounts → cached for ~90% cheaper input.
+function systemBlocks() {
+  return [
+    { type: "text" as const, text: loadPrompt(), cache_control: { type: "ephemeral" as const } },
+  ];
+}
+
+// Parse a model response into a full AnalysisResult (never throws).
+function parseResult(responseText: string, companyName: string): AnalysisResult {
+  const parsed = extractJson(responseText);
+  const result: AnalysisResult = {
+    accountDiscovery: parseAccountDiscovery((parsed.accountDiscovery || {}) as Record<string, string>),
+    valueMap: parseValueMap(parsed.valueMap),
+    meddpicc: parseMeddpicc((parsed.meddpicc || {}) as Record<string, string>),
+  };
+  const adCount = ACCOUNT_DISCOVERY_KEYS.filter((k) => result.accountDiscovery[k]).length;
+  const vmCount = VALUE_MAP_APP_KEYS.reduce(
+    (sum, app) => sum + VALUE_MAP_COLUMN_KEYS.filter((col) => result.valueMap[app][col]).length,
+    0
+  );
+  const mpCount = MEDDPICC_KEYS.filter((k) => result.meddpicc[k]).length;
+  console.log(
+    `[duro-tracks] AI: "${companyName}" → ${adCount}/7 AD, ${vmCount}/${VALUE_MAP_CELL_COUNT} VM, ${mpCount}/8 MP`
+  );
+  return result;
+}
+
 export async function analyzeAccount(
   companyName: string,
   transcriptTexts: string[]
 ): Promise<AnalysisResult> {
-  const combined = transcriptTexts.join("\n\n---\n\n");
-  if (!combined.trim()) return { ...EMPTY_RESULT };
-
-  const maxChars = 100000;
-  const truncated =
-    combined.length > maxChars
-      ? combined.slice(0, maxChars) + "\n\n[Transcripts truncated]"
-      : combined;
+  const truncated = truncateTranscripts(transcriptTexts);
+  if (!truncated.trim()) return { ...EMPTY_RESULT };
 
   try {
     const responseText = await callWithRetry(companyName, truncated);
-    const parsed = extractJson(responseText);
-
-    const ad = (parsed.accountDiscovery || {}) as Record<string, string>;
-    const vm = (parsed.valueMap || {}) as Record<string, Record<string, string>>;
-    const mp = (parsed.meddpicc || {}) as Record<string, string>;
-
-    const result: AnalysisResult = {
-      accountDiscovery: parseAccountDiscovery(ad),
-      valueMap: parseValueMap(vm),
-      meddpicc: parseMeddpicc(mp),
-    };
-
-    const adCount = ACCOUNT_DISCOVERY_KEYS.filter((k) => result.accountDiscovery[k]).length;
-    const vmCount = VALUE_MAP_APP_KEYS.reduce(
-      (sum, app) =>
-        sum + VALUE_MAP_COLUMN_KEYS.filter((col) => result.valueMap[app][col]).length,
-      0
-    );
-    const mpCount = MEDDPICC_KEYS.filter((k) => result.meddpicc[k]).length;
-    console.log(
-      `[duro-tracks] AI: "${companyName}" → ${adCount}/7 AD, ${vmCount}/${VALUE_MAP_CELL_COUNT} VM, ${mpCount}/8 MP`
-    );
-
-    return result;
+    return parseResult(responseText, companyName);
   } catch (error) {
-    console.error(
-      `[duro-tracks] AI failed for "${companyName}":`,
-      String(error).slice(0, 200)
-    );
+    console.error(`[duro-tracks] AI failed for "${companyName}":`, String(error).slice(0, 200));
     return { ...EMPTY_RESULT };
   }
+}
+
+export interface BatchAccountInput {
+  domain: string;
+  companyName: string;
+  transcripts: string[];
+}
+
+// Analyze many accounts via the Message Batches API (~50% cheaper, no per-call
+// rate-limit pacing). Returns a map domain → AnalysisResult with an entry for
+// every input (empty result for any that error/expire).
+export async function analyzeAccountsBatch(
+  inputs: BatchAccountInput[],
+  onProgress?: (done: number, total: number) => void
+): Promise<Map<string, AnalysisResult>> {
+  const out = new Map<string, AnalysisResult>();
+  for (const inp of inputs) out.set(inp.domain, { ...EMPTY_RESULT });
+  if (inputs.length === 0) return out;
+
+  const requests = inputs.map((inp, i) => ({
+    custom_id: `acct-${i}`,
+    params: {
+      model: ANALYSIS_MODEL,
+      max_tokens: 4096,
+      system: systemBlocks(),
+      messages: [
+        {
+          role: "user" as const,
+          content: userContent(inp.companyName, truncateTranscripts(inp.transcripts)),
+        },
+      ],
+    },
+  }));
+
+  const batch = await client.messages.batches.create({ requests });
+  console.log(`[duro-tracks] Batch ${batch.id} submitted: ${requests.length} accounts`);
+
+  const startedAt = Date.now();
+  const MAX_WAIT_MS = 60 * 60 * 1000; // give up after 1h
+  let status = batch;
+  while (status.processing_status !== "ended") {
+    if (Date.now() - startedAt > MAX_WAIT_MS) {
+      console.error(`[duro-tracks] Batch ${batch.id} not finished after 1h — returning partial`);
+      return out;
+    }
+    await new Promise((r) => setTimeout(r, 5000));
+    status = await client.messages.batches.retrieve(batch.id);
+    const c = status.request_counts;
+    onProgress?.(c.succeeded + c.errored + c.canceled + c.expired, requests.length);
+  }
+
+  const results = await client.messages.batches.results(batch.id);
+  for await (const entry of results) {
+    const idx = Number(entry.custom_id.replace("acct-", ""));
+    const inp = inputs[idx];
+    if (!inp) continue;
+    if (entry.result.type === "succeeded") {
+      const text = entry.result.message.content
+        .filter((b): b is Anthropic.TextBlock => b.type === "text")
+        .map((b) => b.text)
+        .join("");
+      out.set(inp.domain, parseResult(text, inp.companyName));
+    } else {
+      console.error(`[duro-tracks] Batch entry for ${inp.domain}: ${entry.result.type}`);
+    }
+  }
+  return out;
 }

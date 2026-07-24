@@ -22,12 +22,16 @@ import {
   setSyncing,
   isSyncing,
 } from "./db";
-import { canonicalRepEmail, INTERNAL_DOMAINS } from "./types";
+import { canonicalRepEmail, INTERNAL_DOMAINS, type AnalysisResult } from "./types";
 import {
   getExternalCorporateDomains,
   domainToCompanyName,
 } from "./domain-resolver";
-import { analyzeAccount, computeTranscriptHash } from "./account-analyzer";
+import {
+  analyzeAccount,
+  analyzeAccountsBatch,
+  computeTranscriptHash,
+} from "./account-analyzer";
 import { runAggregateAnalysis } from "./aggregate-analyzer";
 import { updateProgress, resetProgress } from "./progress";
 
@@ -281,52 +285,32 @@ async function doSync(force: boolean): Promise<SyncResult> {
     });
   }
 
-  // Run AI analysis. A forced (manual) sync re-analyzes every in-scope account;
-  // otherwise only those flagged as needing re-analysis.
+  // Build the analysis work list. A forced (manual) sync re-analyzes every
+  // in-scope account; otherwise only those flagged as needing re-analysis.
+  // Accounts whose transcripts are unchanged are skipped (unless forced).
   const limitedSet = new Set(limitedDomains);
-  const accountsToAnalyze = force
+  const candidates = force
     ? limitedDomains
     : getAccountsNeedingAnalysis().filter((d) => limitedSet.has(d));
 
-  let accountsAnalyzed = 0;
-  updateProgress(
-    "AI Analysis",
-    `0/${accountsToAnalyze.length} accounts...`,
-    55
-  );
-
-  for (let i = 0; i < accountsToAnalyze.length; i++) {
-    const domain = accountsToAnalyze[i];
+  const work: { domain: string; companyName: string; transcripts: string[]; hash: string }[] = [];
+  for (const domain of candidates) {
     const companyName = domainToCompanyName(domain);
-    const pct = 55 + Math.round(((i + 1) / accountsToAnalyze.length) * 40);
-    updateProgress(
-      "AI Analysis",
-      `${i + 1}/${accountsToAnalyze.length} — ${companyName}`,
-      pct
-    );
-
     const transcripts = getTranscriptsForAccount(domain);
     if (transcripts.length === 0) {
-      // Don't mark as analyzed — retry when transcripts become available
       console.log(`[duro-tracks] Skipping ${companyName}: no transcripts yet`);
       continue;
     }
-
     const hash = computeTranscriptHash(transcripts);
-    const existingHash = getAnalysisHash(domain);
-
-    // Skip re-analysis when transcripts are unchanged — unless forced.
-    if (!force && hash === existingHash) {
+    if (!force && hash === getAnalysisHash(domain)) {
       markAccountAnalyzed(domain);
       continue;
     }
+    work.push({ domain, companyName, transcripts, hash });
+  }
 
-    // Pace AI calls (13s gap for 5 req/min limit)
-    if (accountsAnalyzed > 0) {
-      await new Promise((r) => setTimeout(r, 13000));
-    }
-
-    const result = await analyzeAccount(companyName, transcripts);
+  let accountsAnalyzed = 0;
+  const persist = (domain: string, hash: string, result: AnalysisResult) => {
     saveAnalysis(
       domain,
       JSON.stringify(result.accountDiscovery),
@@ -336,6 +320,40 @@ async function doSync(force: boolean): Promise<SyncResult> {
     );
     markAccountAnalyzed(domain);
     accountsAnalyzed++;
+  };
+
+  // Batch API (default) is ~50% cheaper and needs no per-call pacing; set
+  // BATCH_ANALYSIS=0 to fall back to sequential live calls.
+  const useBatch = (process.env.BATCH_ANALYSIS ?? "1") !== "0";
+
+  if (work.length > 0 && useBatch) {
+    updateProgress("AI Analysis (batch)", `Submitting ${work.length} accounts…`, 55);
+    const resultsByDomain = await analyzeAccountsBatch(
+      work.map((w) => ({ domain: w.domain, companyName: w.companyName, transcripts: w.transcripts })),
+      (done, total) =>
+        updateProgress(
+          "AI Analysis (batch)",
+          `${done}/${total} accounts analyzed`,
+          55 + Math.round((done / Math.max(total, 1)) * 40)
+        )
+    );
+    for (const w of work) {
+      const result = resultsByDomain.get(w.domain);
+      if (result) persist(w.domain, w.hash, result);
+    }
+  } else {
+    // Sequential live calls, paced for the 5 req/min limit.
+    for (let i = 0; i < work.length; i++) {
+      const w = work[i];
+      updateProgress(
+        "AI Analysis",
+        `${i + 1}/${work.length} — ${w.companyName}`,
+        55 + Math.round(((i + 1) / work.length) * 40)
+      );
+      if (i > 0) await new Promise((r) => setTimeout(r, 13000));
+      const result = await analyzeAccount(w.companyName, w.transcripts);
+      persist(w.domain, w.hash, result);
+    }
   }
 
   // Run aggregate analysis if any accounts were (re-)analyzed
