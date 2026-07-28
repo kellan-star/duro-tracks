@@ -53,6 +53,7 @@ function initSchema(db: Database.Database): void {
       account_discovery_json TEXT,
       value_map_json TEXT,
       meddpicc_json TEXT,
+      deal_status_json TEXT,
       transcript_hash TEXT,
       analyzed_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -67,6 +68,14 @@ function initSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_calls_account ON calls(account_domain);
     CREATE INDEX IF NOT EXISTS idx_calls_start ON calls(start_at);
   `);
+
+  // Migrations for pre-existing databases (persistent volume). ALTER fails if
+  // the column already exists — ignore that.
+  try {
+    db.exec("ALTER TABLE analysis_results ADD COLUMN deal_status_json TEXT");
+  } catch {
+    /* column already present */
+  }
 }
 
 export function getDb(): Database.Database {
@@ -242,19 +251,21 @@ export function saveAnalysis(
   accountDiscoveryJson: string,
   valueMapJson: string,
   meddpiccJson: string,
+  dealStatusJson: string,
   transcriptHash: string
 ): void {
   const db = getDb();
   db.prepare(
-    `INSERT INTO analysis_results (account_domain, account_discovery_json, value_map_json, meddpicc_json, transcript_hash, analyzed_at)
-     VALUES (?, ?, ?, ?, ?, datetime('now'))
+    `INSERT INTO analysis_results (account_domain, account_discovery_json, value_map_json, meddpicc_json, deal_status_json, transcript_hash, analyzed_at)
+     VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
      ON CONFLICT(account_domain) DO UPDATE SET
        account_discovery_json = excluded.account_discovery_json,
        value_map_json = excluded.value_map_json,
        meddpicc_json = excluded.meddpicc_json,
+       deal_status_json = excluded.deal_status_json,
        transcript_hash = excluded.transcript_hash,
        analyzed_at = excluded.analyzed_at`
-  ).run(domain, accountDiscoveryJson, valueMapJson, meddpiccJson, transcriptHash);
+  ).run(domain, accountDiscoveryJson, valueMapJson, meddpiccJson, dealStatusJson, transcriptHash);
 }
 
 export function getAnalysisHash(domain: string): string | null {
@@ -278,6 +289,7 @@ export interface AccountRow {
   account_discovery_json: string | null;
   value_map_json: string | null;
   meddpicc_json: string | null;
+  deal_status_json: string | null;
 }
 
 export function getAllAccountRows(): AccountRow[] {
@@ -286,7 +298,7 @@ export function getAllAccountRows(): AccountRow[] {
     .prepare(
       `SELECT a.domain, a.company_name, a.lead_rep_email,
               a.first_call_date, a.last_call_date, a.call_count, a.transcript_count,
-              ar.account_discovery_json, ar.value_map_json, ar.meddpicc_json
+              ar.account_discovery_json, ar.value_map_json, ar.meddpicc_json, ar.deal_status_json
        FROM accounts a
        LEFT JOIN analysis_results ar ON ar.account_domain = a.domain
        ORDER BY a.last_call_date DESC`
@@ -300,7 +312,7 @@ export function getAccountRow(domain: string): AccountRow | undefined {
     .prepare(
       `SELECT a.domain, a.company_name, a.lead_rep_email,
               a.first_call_date, a.last_call_date, a.call_count, a.transcript_count,
-              ar.account_discovery_json, ar.value_map_json, ar.meddpicc_json
+              ar.account_discovery_json, ar.value_map_json, ar.meddpicc_json, ar.deal_status_json
        FROM accounts a
        LEFT JOIN analysis_results ar ON ar.account_domain = a.domain
        WHERE a.domain = ?`
