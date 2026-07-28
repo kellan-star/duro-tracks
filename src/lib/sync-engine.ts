@@ -316,6 +316,7 @@ async function doSync(force: boolean): Promise<SyncResult> {
       JSON.stringify(result.accountDiscovery),
       JSON.stringify(result.valueMap),
       JSON.stringify(result.meddpicc),
+      JSON.stringify(result.deal),
       hash
     );
     markAccountAnalyzed(domain);

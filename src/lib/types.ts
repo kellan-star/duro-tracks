@@ -148,12 +148,43 @@ export const MEDDPICC_LABELS: Record<keyof Meddpicc, string> = {
 
 export const MEDDPICC_KEYS = Object.keys(MEDDPICC_LABELS) as Array<keyof Meddpicc>;
 
+// --- Deal status (classified from transcripts) ---
+
+// AI classifies Closed Won / Closed Lost / Open. "No-show" is applied by rule
+// to accounts that have no transcripts (never really engaged).
+export const DEAL_STATUS_VALUES = ["Closed Won", "Closed Lost", "Open", "No-show"] as const;
+export type DealStatus = (typeof DEAL_STATUS_VALUES)[number];
+
+// Single-word categories only.
+export const CLOSED_LOST_CATEGORIES = [
+  "Product", // missing features or functionality
+  "ICP", // not a good customer fit
+  "Budget", // Duro is too expensive
+  "Competitor", // chose another tool
+  "Timing", // not now / deprioritized
+  "Other",
+] as const;
+export type ClosedLostCategory = (typeof CLOSED_LOST_CATEGORIES)[number];
+
+export interface DealClassification {
+  status: DealStatus;
+  closedLostCategory: string; // "" unless status is "Closed Lost"
+  closedLostDetails: string; // "" unless status is "Closed Lost"
+}
+
+export const EMPTY_DEAL: DealClassification = {
+  status: "Open",
+  closedLostCategory: "",
+  closedLostDetails: "",
+};
+
 // --- Combined Analysis Result ---
 
 export interface AnalysisResult {
   accountDiscovery: AccountDiscovery;
   valueMap: ValueMap;
   meddpicc: Meddpicc;
+  deal: DealClassification;
 }
 
 // --- Account ---

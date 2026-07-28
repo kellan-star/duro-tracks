@@ -93,9 +93,22 @@ For the single product **PLM**, fill the three cells below from what the PROSPEC
 
 ---
 
+## Framework 4: Deal Status
+
+Judge the current state of the deal **only from what the calls actually say**.
+
+- `status` — exactly one of `"Closed Won"`, `"Closed Lost"`, or `"Open"`.
+  - `"Closed Won"` only if the prospect clearly committed / signed / moved ahead with Duro.
+  - `"Closed Lost"` only if the prospect clearly declined, chose a competitor, or the deal is explicitly dead.
+  - `"Open"` for everything else — still evaluating, gone quiet, or no clear outcome stated. **When in doubt, use `"Open"`; never guess Won/Lost.**
+- `closedLostCategory` — ONLY when status is `"Closed Lost"` (else `""`). Best-fit **single word** from: `Product` (missing features or functionality), `ICP` (not a good customer fit), `Budget` (Duro is too expensive), `Competitor` (chose another tool), `Timing` (not now / deprioritized), or `Other` (anything else). Return exactly one of these words — no other values.
+- `closedLostDetails` — ONLY when status is `"Closed Lost"` (else `""`). A longer, specific explanation that expands on `closedLostCategory`, grounded in the calls (e.g., for Product: "needed multi-site BOM sync and NetSuite write-back Duro didn't offer yet"; for Competitor: "chose Arena — already standardized on it org-wide").
+
+---
+
 ## Output Format
 
-Return a single JSON object with three top-level keys. Use empty string "" for fields with no relevant information.
+Return a single JSON object with these top-level keys. Use empty string "" for fields with no relevant information.
 
 ```json
 {
@@ -120,6 +133,11 @@ Return a single JSON object with three top-level keys. Use empty string "" for f
     "identifyPain": "",
     "champion": "",
     "competitors": ""
+  },
+  "dealStatus": {
+    "status": "Open",
+    "closedLostCategory": "",
+    "closedLostDetails": ""
   }
 }
 ```

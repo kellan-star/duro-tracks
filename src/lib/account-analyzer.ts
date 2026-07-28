@@ -2,11 +2,22 @@ import Anthropic from "@anthropic-ai/sdk";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { createHash } from "crypto";
-import type { AnalysisResult, AccountDiscovery, ValueMap, ValueMapEntry, Meddpicc } from "./types";
+import type {
+  AnalysisResult,
+  AccountDiscovery,
+  ValueMap,
+  ValueMapEntry,
+  Meddpicc,
+  DealClassification,
+  DealStatus,
+} from "./types";
 import {
   EMPTY_ACCOUNT_DISCOVERY,
   EMPTY_VALUE_MAP,
   EMPTY_MEDDPICC,
+  EMPTY_DEAL,
+  DEAL_STATUS_VALUES,
+  CLOSED_LOST_CATEGORIES,
   ACCOUNT_DISCOVERY_KEYS,
   VALUE_MAP_APP_KEYS,
   VALUE_MAP_COLUMN_KEYS,
@@ -36,6 +47,7 @@ const EMPTY_RESULT: AnalysisResult = {
   accountDiscovery: { ...EMPTY_ACCOUNT_DISCOVERY },
   valueMap: JSON.parse(JSON.stringify(EMPTY_VALUE_MAP)),
   meddpicc: { ...EMPTY_MEDDPICC },
+  deal: { ...EMPTY_DEAL },
 };
 
 function extractJson(text: string): Record<string, unknown> {
@@ -153,6 +165,24 @@ function systemBlocks() {
   ];
 }
 
+// Validate the model's deal classification against the allowed values.
+// (No-show is applied by rule for accounts with no transcripts, not here.)
+function parseDeal(raw: unknown): DealClassification {
+  const m = lowerKeyed(raw);
+  const rawStatus = typeof m["status"] === "string" ? (m["status"] as string).trim() : "";
+  const status: DealStatus =
+    (DEAL_STATUS_VALUES as readonly string[]).includes(rawStatus) && rawStatus !== "No-show"
+      ? (rawStatus as DealStatus)
+      : "Open";
+  if (status !== "Closed Lost") {
+    return { status, closedLostCategory: "", closedLostDetails: "" };
+  }
+  const rawCat = typeof m["closedlostcategory"] === "string" ? (m["closedlostcategory"] as string).trim() : "";
+  const category = (CLOSED_LOST_CATEGORIES as readonly string[]).includes(rawCat) ? rawCat : "Other";
+  const details = typeof m["closedlostdetails"] === "string" ? (m["closedlostdetails"] as string).trim() : "";
+  return { status, closedLostCategory: category, closedLostDetails: details };
+}
+
 // Parse a model response into a full AnalysisResult (never throws).
 function parseResult(responseText: string, companyName: string): AnalysisResult {
   const parsed = extractJson(responseText);
@@ -160,6 +190,7 @@ function parseResult(responseText: string, companyName: string): AnalysisResult 
     accountDiscovery: parseAccountDiscovery((parsed.accountDiscovery || {}) as Record<string, string>),
     valueMap: parseValueMap(parsed.valueMap),
     meddpicc: parseMeddpicc((parsed.meddpicc || {}) as Record<string, string>),
+    deal: parseDeal(parsed.dealStatus),
   };
   const adCount = ACCOUNT_DISCOVERY_KEYS.filter((k) => result.accountDiscovery[k]).length;
   const vmCount = VALUE_MAP_APP_KEYS.reduce(
