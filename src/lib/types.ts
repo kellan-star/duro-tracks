@@ -202,6 +202,7 @@ export interface Account {
   accountDiscovery: AccountDiscovery;
   valueMap: ValueMap;
   meddpicc: Meddpicc;
+  deal: DealClassification;
 }
 
 // --- Sales Rep Summary ---

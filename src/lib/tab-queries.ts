@@ -25,10 +25,12 @@ import {
   type ValueMap,
   type Meddpicc,
   type CallRecord,
+  type DealClassification,
   TRACKED_REPS,
   EMPTY_ACCOUNT_DISCOVERY,
   EMPTY_VALUE_MAP,
   EMPTY_MEDDPICC,
+  EMPTY_DEAL,
   ACCOUNT_DISCOVERY_KEYS,
   ACCOUNT_DISCOVERY_LABELS,
   VALUE_MAP_APP_KEYS,
@@ -55,6 +57,12 @@ function rowToAccount(row: AccountRow): Account {
   const vm = parseJson<ValueMap>(row.value_map_json, JSON.parse(JSON.stringify(EMPTY_VALUE_MAP)));
   const mp = parseJson<Meddpicc>(row.meddpicc_json, { ...EMPTY_MEDDPICC });
 
+  // No transcripts → No-show; otherwise use the classified deal status.
+  let deal = parseJson<DealClassification>(row.deal_status_json, { ...EMPTY_DEAL });
+  if (row.transcript_count === 0) {
+    deal = { status: "No-show", closedLostCategory: "", closedLostDetails: "" };
+  }
+
   const leadRep = row.lead_rep_email
     ? TRACKED_REPS.find((r) => r.email === row.lead_rep_email)
     : null;
@@ -77,6 +85,7 @@ function rowToAccount(row: AccountRow): Account {
     accountDiscovery: ad,
     valueMap: vm,
     meddpicc: mp,
+    deal,
   };
 }
 
