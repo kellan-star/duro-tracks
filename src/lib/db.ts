@@ -194,6 +194,31 @@ export function getTranscriptsForAccount(domain: string): string[] {
   return rows.map((r) => r.content);
 }
 
+// Accounts whose transcripts contain `term` (case-insensitive substring),
+// with the number of the account's transcripts that match. For keyword
+// mention counts across the book.
+export function getAccountsMentioning(
+  term: string
+): Array<{ domain: string; company_name: string | null; hits: number }> {
+  const db = getDb();
+  // Escape LIKE wildcards in the user term.
+  const like = "%" + term.replace(/[\\%_]/g, (m) => "\\" + m) + "%";
+  return db
+    .prepare(
+      `SELECT c.account_domain AS domain,
+              a.company_name    AS company_name,
+              COUNT(*)          AS hits
+       FROM transcripts t
+       JOIN calls c ON c.meeting_uuid = t.meeting_uuid
+       LEFT JOIN accounts a ON a.domain = c.account_domain
+       WHERE c.account_domain IS NOT NULL
+         AND t.content LIKE ? ESCAPE '\\'
+       GROUP BY c.account_domain
+       ORDER BY hits DESC, domain ASC`
+    )
+    .all(like) as Array<{ domain: string; company_name: string | null; hits: number }>;
+}
+
 // --- Accounts ---
 
 export function upsertAccount(acct: {
