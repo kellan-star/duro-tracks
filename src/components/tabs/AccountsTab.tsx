@@ -6,21 +6,6 @@ import { CoveragePill } from "@/components/shared/CoveragePill";
 import { CompanyAvatar } from "@/components/shared/CompanyAvatar";
 import { accountDiscoveryScore, valueMapScore, meddpiccScore } from "@/lib/types";
 
-function StatusBadge({ status }: { status: string }) {
-  const styles: Record<string, React.CSSProperties> = {
-    "Closed Won": { background: "var(--ok-bg)", color: "var(--ok-fg)", borderColor: "var(--ok-border)" },
-    "Closed Lost": { background: "var(--bad-bg)", color: "var(--bad-fg)", borderColor: "var(--bad-border)" },
-    "Open": { background: "var(--accent-soft)", color: "var(--accent)", borderColor: "var(--accent-ring)" },
-    "No-show": { background: "var(--null-bg)", color: "var(--null-fg)", borderColor: "var(--null-border)" },
-  };
-  const s = styles[status] || styles["Open"];
-  return (
-    <span className="pill" style={{ minWidth: "auto", padding: "0 8px", ...s }}>
-      {status || "—"}
-    </span>
-  );
-}
-
 export function AccountsTab() {
   const { data, isLoading } = useAccounts();
 
@@ -57,8 +42,6 @@ export function AccountsTab() {
               <col style={{ width: 125 }} />
               <col style={{ width: 80 }} />
               <col style={{ width: 85 }} />
-              <col style={{ width: 100 }} />
-              <col style={{ width: 130 }} />
               <col style={{ width: 95 }} />
             </colgroup>
             <thead>
@@ -71,8 +54,6 @@ export function AccountsTab() {
                 <th style={{ whiteSpace: "nowrap" }}>Account Discovery</th>
                 <th style={{ whiteSpace: "nowrap" }}>Value Map</th>
                 <th style={{ whiteSpace: "nowrap" }}>MEDDPICC</th>
-                <th style={{ whiteSpace: "nowrap" }}>Status</th>
-                <th style={{ whiteSpace: "nowrap" }}>Closed Lost Category</th>
                 <th style={{ textAlign: "right", whiteSpace: "nowrap" }}>Acct Summary</th>
               </tr>
             </thead>
@@ -94,10 +75,6 @@ export function AccountsTab() {
                   <td><CoveragePill value={accountDiscoveryScore(acct.accountDiscovery)} /></td>
                   <td><CoveragePill value={valueMapScore(acct.valueMap)} /></td>
                   <td><CoveragePill value={meddpiccScore(acct.meddpicc)} /></td>
-                  <td><StatusBadge status={acct.deal.status} /></td>
-                  <td style={{ color: "var(--text-2)" }}>
-                    {acct.deal.status === "Closed Lost" ? acct.deal.closedLostCategory || "—" : "—"}
-                  </td>
                   <td style={{ textAlign: "right" }}>
                     <Link
                       href={`/accounts/${encodeURIComponent(acct.domain)}`}
