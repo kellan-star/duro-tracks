@@ -167,6 +167,59 @@ themes.slice(0, 5).forEach((t, idx) => {
   }
 });
 
+// ---- Feature interest (optional) ------------------------------------------
+// Populated from /api/feature-interest output; pass its path via FEATURE_JSON.
+let feature = null;
+if (process.env.FEATURE_JSON) {
+  try {
+    feature = JSON.parse(readFileSync(process.env.FEATURE_JSON, "utf-8"));
+  } catch {
+    feature = null;
+  }
+}
+if (feature && (feature.aiFeatures || feature.apiSupport)) {
+  const s = pres.addSlide();
+  s.background = { color: WHITE };
+  const n = Number(feature.accountsAnalyzed) || accountsAnalyzed;
+  s.addText("Interest in AI features & API support", { x: 0.7, y: 0.5, w: 12, h: 0.7, fontFace: SERIF, fontSize: 32, bold: true, color: INK });
+  s.addText(`Accounts that mentioned or indicated these would be of value, across the ${n} Closed-Won accounts`, { x: 0.72, y: 1.2, w: 12, h: 0.4, fontFace: SANS, fontSize: 14, color: SLATE });
+
+  const panels = [
+    { label: "AI features", data: feature.aiFeatures || { count: 0, pct: 0, accounts: [] } },
+    { label: "API support", data: feature.apiSupport || { count: 0, pct: 0, accounts: [] } },
+  ];
+  const panelW = 5.9, panelH = 4.9, gap = 0.6, x0 = 0.7, y0 = 1.85;
+  panels.forEach((p, i) => {
+    const px = x0 + i * (panelW + gap);
+    s.addShape(pres.ShapeType.roundRect, { x: px, y: y0, w: panelW, h: panelH, rectRadius: 0.12, fill: { color: CLOUD }, line: { type: "none" }, shadow: softShadow() });
+    // header band
+    s.addShape(pres.ShapeType.roundRect, { x: px, y: y0, w: panelW, h: 1.7, rectRadius: 0.12, fill: { color: i === 0 ? BLUE : NAVY }, line: { type: "none" } });
+    s.addText(p.label, { x: px + 0.35, y: y0 + 0.18, w: panelW - 0.7, h: 0.5, fontFace: SANS, fontSize: 18, bold: true, color: WHITE, margin: 0 });
+    s.addText(
+      [
+        { text: `${p.data.count}`, options: { fontSize: 52, bold: true, color: WHITE } },
+        { text: ` of ${n}`, options: { fontSize: 22, color: ICE } },
+      ],
+      { x: px + 0.35, y: y0 + 0.62, w: panelW - 0.7, h: 0.95, fontFace: SANS, valign: "middle", margin: 0 }
+    );
+    s.addText(`${p.data.pct}% of accounts`, { x: px + panelW - 2.2, y: y0 + 0.22, w: 1.9, h: 0.4, fontFace: SANS, fontSize: 14, bold: true, color: i === 0 ? ICE : ICE, align: "right", valign: "middle", margin: 0 });
+
+    // account chips
+    const accts = Array.isArray(p.data.accounts) ? p.data.accounts : [];
+    s.addText(accts.length ? "Accounts" : "No accounts indicated this", { x: px + 0.35, y: y0 + 1.85, w: panelW - 0.7, h: 0.35, fontFace: SANS, fontSize: 12, bold: true, color: SLATE, charSpacing: 2 });
+    const cols = 2, chipW = (panelW - 0.7 - 0.15) / cols, chipH = 0.42, gx = px + 0.35, gy = y0 + 2.28, padX = 0.15, padY = 0.13;
+    accts.slice(0, 12).forEach((name, j) => {
+      const r = Math.floor(j / cols), c = j % cols;
+      const cx = gx + c * (chipW + padX), cy = gy + r * (chipH + padY);
+      s.addShape(pres.ShapeType.roundRect, { x: cx, y: cy, w: chipW, h: chipH, rectRadius: 0.06, fill: { color: WHITE }, line: { color: ICE, width: 1 } });
+      s.addText(name, { x: cx + 0.12, y: cy, w: chipW - 0.24, h: chipH, fontFace: SANS, fontSize: 11, color: INK, valign: "middle", margin: 0, fit: "shrink" });
+    });
+    if (accts.length > 12) {
+      s.addText(`+${accts.length - 12} more`, { x: gx, y: gy + 6 * (chipH + padY) + 0.02, w: panelW - 0.7, h: 0.3, fontFace: SANS, fontSize: 11, italic: true, color: SLATE, margin: 0 });
+    }
+  });
+}
+
 // ---- Methodology -----------------------------------------------------------
 {
   const s = pres.addSlide();
