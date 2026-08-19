@@ -109,18 +109,31 @@ const softShadow = () => ({ type: "outer", color: "0B1F4D", opacity: 0.18, blur:
   s.addText("Top purchase drivers", { x: 0.7, y: 0.5, w: 11, h: 0.7, fontFace: SERIF, fontSize: 34, bold: true, color: INK });
   s.addText(`Share of the ${accountsAnalyzed} Closed-Won accounts citing each driver`, { x: 0.72, y: 1.18, w: 11, h: 0.4, fontFace: SANS, fontSize: 14, color: SLATE });
 
-  const chartThemes = themes.slice(0, 8).slice().reverse(); // bar charts read bottom-up
-  const labels = chartThemes.map((t) => t.reason);
-  const values = chartThemes.map((t) => t.pct);
-  s.addChart(pres.ChartType.bar, [{ name: "% of accounts", labels, values }], {
-    x: 0.7, y: 1.7, w: 11.9, h: 5.3,
-    barDir: "bar",
-    chartColors: [BLUE],
-    showValue: true, dataLabelPosition: "outEnd", dataLabelColor: INK, dataLabelFontFace: SANS, dataLabelFontSize: 11, dataLabelFormatCode: '0"%"',
-    valAxisHidden: true, valGridLine: { style: "none" }, valAxisMaxVal: 100, valAxisMinVal: 0,
-    catAxisLabelColor: INK, catAxisLabelFontFace: SANS, catAxisLabelFontSize: 12, catGridLine: { style: "none" },
-    showLegend: false, showTitle: false,
-    barGapWidthPct: 45,
+  // Custom horizontal bars — driver names are far too long for a native chart's
+  // category axis (PowerPoint falls back to 1..N numbers), so we draw them.
+  const rows = themes.slice(0, 8);
+  const top = 2.0, bottom = 7.05;
+  const rowH = (bottom - top) / rows.length;
+  const barH = Math.min(0.34, rowH * 0.5);
+  const textX = 0.7, textW = 6.5;
+  const barX = 7.35, barMaxW = 4.55; // bar track; % label sits to the right
+  rows.forEach((t, i) => {
+    const yMid = top + i * rowH + rowH / 2;
+    const barY = yMid - barH / 2;
+    // driver name (full text, shrink to fit the row)
+    s.addText(
+      [
+        { text: `${i + 1}.  `, options: { bold: true, color: BLUE } },
+        { text: t.reason, options: { color: INK } },
+      ],
+      { x: textX, y: top + i * rowH, w: textW, h: rowH, fontFace: SANS, fontSize: 11, valign: "middle", margin: 0, fit: "shrink", lineSpacingMultiple: 0.95 }
+    );
+    // track + value bar
+    s.addShape(pres.ShapeType.roundRect, { x: barX, y: barY, w: barMaxW, h: barH, rectRadius: 0.05, fill: { color: CLOUD }, line: { type: "none" } });
+    const w = Math.max(0.06, (t.pct / 100) * barMaxW);
+    s.addShape(pres.ShapeType.roundRect, { x: barX, y: barY, w, h: barH, rectRadius: 0.05, fill: { color: BLUE }, line: { type: "none" } });
+    // % label
+    s.addText(`${t.pct}%`, { x: barX + barMaxW + 0.12, y: yMid - 0.18, w: 1.0, h: 0.36, fontFace: SANS, fontSize: 13, bold: true, color: INK, valign: "middle", margin: 0 });
   });
 }
 
