@@ -95,7 +95,7 @@ const softShadow = () => ({ type: "outer", color: "0B1F4D", opacity: 0.18, blur:
     const fg = i === 0 ? WHITE : INK;
     const sub = i === 0 ? ICE : SLATE;
     s.addText(`${t.pct}%`, { x: cardX + 0.25, y: cy + 0.12, w: 1.5, h: 0.75, fontFace: SANS, fontSize: 40, bold: true, color: fg, margin: 0 });
-    s.addText(t.reason, { x: cardX + 1.75, y: cy + 0.12, w: cardW - 2.0, h: cardH - 0.24, fontFace: SANS, fontSize: 13, bold: true, color: fg, valign: "middle", margin: 0 });
+    s.addText(t.reason, { x: cardX + 1.75, y: cy + 0.1, w: cardW - 2.0, h: cardH - 0.2, fontFace: SANS, fontSize: 12, bold: true, color: fg, valign: "middle", margin: 0, fit: "shrink" });
     s.addText(`${t.count} of ${accountsAnalyzed} accounts`, { x: cardX + 0.25, y: cy + 0.92, w: 1.5, h: 0.4, fontFace: SANS, fontSize: 10, color: sub, margin: 0 });
     cy += cardH + gap;
   });
@@ -129,7 +129,8 @@ themes.slice(0, 5).forEach((t, idx) => {
   const s = pres.addSlide();
   s.background = { color: WHITE };
   s.addText(`Driver ${idx + 1}`, { x: 0.7, y: 0.55, w: 5, h: 0.4, fontFace: SANS, fontSize: 13, bold: true, color: BLUE, charSpacing: 3 });
-  s.addText(t.reason, { x: 0.7, y: 0.95, w: 8.1, h: 1.7, fontFace: SERIF, fontSize: 32, bold: true, color: INK, valign: "top", lineSpacingMultiple: 1.0 });
+  const titleSize = t.reason.length > 120 ? 24 : t.reason.length > 80 ? 27 : 31;
+  s.addText(t.reason, { x: 0.7, y: 0.95, w: 8.1, h: 2.3, fontFace: SERIF, fontSize: titleSize, bold: true, color: INK, valign: "top", lineSpacingMultiple: 1.02, fit: "shrink" });
 
   // Big stat block on the right
   s.addShape(pres.ShapeType.roundRect, { x: 9.1, y: 0.95, w: 3.5, h: 2.6, rectRadius: 0.12, fill: { color: NAVY }, line: { type: "none" }, shadow: softShadow() });
@@ -137,11 +138,13 @@ themes.slice(0, 5).forEach((t, idx) => {
   s.addText(`${t.count} of ${accountsAnalyzed} accounts`, { x: 9.1, y: 2.65, w: 3.5, h: 0.6, fontFace: SANS, fontSize: 15, color: ICE, align: "center", margin: 0 });
 
   // Example accounts
-  const accts = t.accounts.slice(0, 12);
+  const accts = t.accounts.slice(0, 16);
+  const dropped = t.accounts.length - accts.length;
   if (accts.length) {
-    s.addText("Example accounts", { x: 0.7, y: 3.7, w: 8, h: 0.4, fontFace: SANS, fontSize: 14, bold: true, color: SLATE, charSpacing: 2 });
+    const label = dropped > 0 ? `Accounts (showing ${accts.length} of ${t.accounts.length})` : "Accounts";
+    s.addText(label, { x: 0.7, y: 3.7, w: 8, h: 0.4, fontFace: SANS, fontSize: 14, bold: true, color: SLATE, charSpacing: 2 });
     // chips grid
-    const cols = 3, chipW = 3.85, chipH = 0.55, gx = 0.7, gy = 4.2, padX = 0.15, padY = 0.15;
+    const cols = 4, chipW = 2.85, chipH = 0.5, gx = 0.7, gy = 4.2, padX = 0.13, padY = 0.14;
     accts.forEach((name, i) => {
       const r = Math.floor(i / cols), c = i % cols;
       const x = gx + c * (chipW + padX), y = gy + r * (chipH + padY);
