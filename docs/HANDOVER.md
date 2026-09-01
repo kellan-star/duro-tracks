@@ -10,6 +10,8 @@ serves a **Next.js** dashboard hosted on **Railway**.
 
 ## 1. Access to transfer (do these first)
 
+New owner: **[@blakeoc26](https://github.com/blakeoc26)**.
+
 Ask the current owner to grant the new owner access to each of these. Do **not** paste secret
 values into chat, email, or the repo — share them through a password manager / secrets vault,
 or rotate them (see §7).
@@ -200,13 +202,13 @@ Four mechanisms keep Claude usage down; see `account-analyzer.ts` / `sync-engine
 
 ## 11. Handover checklist
 
-- [ ] New owner added to the GitHub repo (write/admin)
-- [ ] New owner added to the Railway project
+- [ ] @blakeoc26 added to the GitHub repo (`kellan-star/duro-tracks`, write/admin)
+- [ ] @blakeoc26 added to the Railway project
 - [ ] Avoma API key transferred or reissued, set in Railway Variables
 - [ ] Anthropic API key transferred or reissued (on org billing), set in Railway Variables
-- [ ] New owner can clone, `npm install`, `npm run dev`, and run a `MAX_DEALS`-limited sync locally
-- [ ] New owner confirmed the Railway persistent volume is mounted at `/app/data`
-- [ ] New owner did a test merge to `main` and watched it deploy
-- [ ] Old keys rotated once the new owner is set up
+- [ ] @blakeoc26 can clone, `npm install`, `npm run dev`, and run a `MAX_DEALS`-limited sync locally
+- [ ] @blakeoc26 confirmed the Railway persistent volume is mounted at `/app/data`
+- [ ] @blakeoc26 did a test merge to `main` and watched it deploy
+- [ ] Old keys rotated once @blakeoc26 is set up
 - [ ] Walked through this runbook together
 ```
