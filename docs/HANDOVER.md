@@ -211,4 +211,63 @@ Four mechanisms keep Claude usage down; see `account-analyzer.ts` / `sync-engine
 - [ ] @blakeoc26 did a test merge to `main` and watched it deploy
 - [ ] Old keys rotated once @blakeoc26 is set up
 - [ ] Walked through this runbook together
+
+---
+
+## 12. Driving the app — operator quick reference
+
+### Where everything lives
+
+| Thing | Location |
+|---|---|
+| **Call transcripts + AI analysis** | SQLite DB at `/app/data/duro-tracks.db` on the Railway persistent volume (locally: `data/duro-tracks.db`). Transcripts are in the `transcripts` table; per-account analysis in `analysis_results`. |
+| **The live app** | The Railway service → its public domain (the production URL) |
+| **Source code** | GitHub `kellan-star/duro-tracks`, branch `main` |
+| **Ingestion logic** | `src/lib/sync-engine.ts` (+ `src/lib/avoma-client.ts`) |
+| **AI analysis logic** | `src/lib/account-analyzer.ts`, `src/lib/aggregate-analyzer.ts` |
+| **AI prompts (editable text)** | `src/prompts/*.md` |
+| **Secrets / config** | Railway → service → **Variables** (never in the repo) |
+| **Build / deploy config** | `nixpacks.toml` |
+| **Deploy history + runtime logs** | Railway → service → **Deployments** (build logs) and **Observability / Logs** (runtime) |
+
+### Shipping a change (end to end)
+
+1. Make the change on a feature branch (via Claude Code, or locally).
+2. `npm run typecheck && npm run build` to confirm it compiles.
+3. Open a PR into `main`, review the diff, merge it.
+4. **Railway auto-deploys `main`.** Watch the deploy in Railway → Deployments until it's active.
+5. Verify on the production URL.
+
+**Roll back:** either revert the PR on GitHub (creates a new commit → auto-deploys the revert),
+or in Railway → Deployments, redeploy the previous good deployment.
+
+### Running things on demand
+
+```bash
+BASE=https://<your-railway-domain>
+
+# Sync now (fetch new calls + analyze). Add ?force=1 to re-analyze everything.
+curl -X POST "$BASE/api/sync"          # returns 202; then poll:
+curl "$BASE/api/sync"                   # {isSyncing, lastSyncAt}
+curl "$BASE/api/progress"               # live progress
+
+# Ad-hoc analyses
+curl "$BASE/api/export" -o accounts.csv                 # CSV export
+curl "$BASE/api/mentions?q=PDM"                         # unique accounts mentioning a term
+curl "$BASE/api/win-reasons?domains=a.com,b.com"        # ranked purchase drivers
+curl "$BASE/api/feature-interest?domains=a.com,b.com"   # AI / API interest for a set
+curl -X POST "$BASE/api/feature-scan"                   # book-wide 3-signal scan (background)
+curl "$BASE/api/feature-scan"                           # poll; &details=1 for evidence
 ```
+
+### Troubleshooting
+
+| Symptom | First thing to check |
+|---|---|
+| Dashboard is empty / stale | Trigger a sync (`POST /api/sync`); poll `/api/progress`. If still empty, confirm the Railway volume is mounted at `/app/data` (a lost volume = empty DB). |
+| Sync never finishes / errors | Read Railway runtime logs. Common causes: Avoma or Anthropic API key invalid/expired, or an upstream rate limit. |
+| Every redeploy looks like a "crash" | Expected only if the start command regressed — it must be `node_modules/.bin/next start` (see `nixpacks.toml`), not `npm start`. |
+| "No space left on device" | The Railway volume/disk is full — clear old data or grow the volume. Deletes still work when writes fail. |
+| A deploy didn't pick up your commit | Confirm the commit is on `main` and the Railway deploy references that SHA (Railway deploy IDs are UUIDs, not git SHAs). |
+| Need to know which model is running | Check `ANALYSIS_MODEL` / `AGGREGATE_MODEL` / `ANTHROPIC_MODEL` in Railway Variables; unset = per-tier defaults. |
+
