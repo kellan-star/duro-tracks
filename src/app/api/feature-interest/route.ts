@@ -4,6 +4,7 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { queryAccountsTab } from "@/lib/tab-queries";
 import { getTranscriptsForAccount } from "@/lib/db";
+import { requireAdmin } from "@/lib/admin-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -123,12 +124,18 @@ async function handle(domains: string[], dryRun: boolean) {
 }
 
 export async function GET(request: Request) {
+  const denied = requireAdmin(request);
+  if (denied) return denied;
+
   const url = new URL(request.url);
   const domains = (url.searchParams.get("domains") || "").split(/[,\n]/);
   return handle(domains, url.searchParams.get("dryRun") === "1");
 }
 
 export async function POST(request: Request) {
+  const denied = requireAdmin(request);
+  if (denied) return denied;
+
   const url = new URL(request.url);
   let domains: string[] = [];
   try {

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { startFeatureScan, getFeatureScan, isScanning } from "@/lib/feature-scan-job";
+import { requireAdmin } from "@/lib/admin-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,6 +15,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const denied = requireAdmin(request);
+  if (denied) return denied;
+
   if (isScanning()) {
     return NextResponse.json({ error: "Scan already in progress", ...getFeatureScan(false) }, { status: 409 });
   }

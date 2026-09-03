@@ -65,11 +65,13 @@ export function useSync() {
     }, POLL_MS);
   }, [stopPolling]);
 
-  // Manual sync forces a full re-analysis (force=true); the daily auto-sync runs
-  // an incremental sync (force=false). The request returns immediately (202);
-  // progress is tracked by polling.
+  // Both the "Sync now" button and the daily auto-sync run an INCREMENTAL sync:
+  // new transcripts are fetched and only accounts whose transcripts changed are
+  // re-analyzed. A forced full re-analysis (?force=1) is an admin operation that
+  // requires the x-duro-token header, so the browser cannot trigger it.
+  // The request returns immediately (202); progress is tracked by polling.
   const triggerSync = useCallback(
-    async (force = true) => {
+    async (force = false) => {
       setError(null);
       setIsSyncing(true);
       try {
