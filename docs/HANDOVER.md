@@ -40,11 +40,15 @@ in the repo. The app reads:
 | `AGGREGATE_MODEL` | No | Overrides the cross-account synthesis model (default: a stronger Claude model) |
 | `ANTHROPIC_MODEL` | No | Sets **both** tiers at once (a single override); leave unset to use the per-tier defaults |
 | `BATCH_ANALYSIS` | No | Toggles the Message Batches API path for per-account analysis (on by default) |
-| `MAX_DEALS` | No | Caps how many accounts a sync will process — useful for testing on a small set |
+| `MAX_DEALS` | No | Caps how many accounts a sync will process — useful for testing on a small set. **`0` = the full book.** |
+| `DURO_ADMIN_TOKEN` | **Yes, in production** | Shared secret guarding the destructive / paid endpoints (see §8). Any long random string. |
 
 Notes:
-- The two API keys are the only hard requirements. The rest have sensible defaults.
+- The two API keys are the only hard requirements to *run*. `DURO_ADMIN_TOKEN` should
+  always be set in production — see the fail-closed behavior in §8.
 - If you rotate a key, update it in Railway Variables and redeploy (or trigger a redeploy).
+- **`MAX_DEALS` gotcha:** `.env.example` ships `MAX_DEALS=1`, so copying it verbatim limits
+  **every** sync to a single account. Set `MAX_DEALS=0` once you want the full book of business.
 
 ---
 
@@ -80,8 +84,11 @@ nixpacks.toml            # Railway build/start config
 README.md, PRD.md        # product overview + full spec
 ```
 
-**Tracked reps** (whose calls are ingested) are configured in `src/lib/sync-engine.ts`
-(`canonicalRepEmail` matching). To change who is tracked, edit there.
+**Tracked reps** (whose calls are ingested) are defined in **`src/lib/types.ts`** as
+`TRACKED_REPS` — one entry per rep, each listing all of that rep's email aliases (e.g.
+`blake@durolabs.co` + `blake.oconnor@altium.com`), which are collapsed to a single canonical
+key. To change who is tracked, edit that list. `src/lib/sync-engine.ts` only *calls*
+`canonicalRepEmail()` from `types.ts` to match attendees; there is nothing to edit there.
 
 ---
 
@@ -99,7 +106,8 @@ npm install
 cat > .env.local <<'EOF'
 ANTHROPIC_API_KEY=sk-ant-...
 AVOMA_API_KEY=...
-MAX_DEALS=3          # optional: keep test runs small/cheap
+MAX_DEALS=3          # optional: keep test runs small/cheap (0 = full book)
+DURO_ADMIN_TOKEN=dev-token-any-string   # needed to call the endpoints in §8
 EOF
 
 npm run dev          # http://localhost:3000
@@ -111,9 +119,13 @@ sync from the dashboard's "Sync Now" button or `curl -X POST localhost:3000/api/
 Useful commands:
 ```bash
 npm run typecheck    # tsc --noEmit
-npm run lint
 npm run build        # production build
 ```
+
+These two are the real gates, and CI runs exactly them on every PR to `main`
+(`.github/workflows/ci.yml`). There is **no working `npm run lint`** — the repo has no
+ESLint config and `next lint` is deprecated in Next 15.5 (it exits non-zero after an
+interactive prompt), so don't add it to CI without configuring ESLint first.
 
 ---
 
@@ -142,8 +154,10 @@ npm run build        # production build
 
 ## 7. Operations
 
-**Manual sync:** dashboard "Sync Now" button, or `POST /api/sync`. Add `?force=1` to re-run all
-AI analysis even when transcripts are unchanged.
+**Manual sync:** dashboard "Sync Now" button, or `POST /api/sync`. Both run an *incremental*
+sync (only accounts whose transcripts changed are re-analyzed). `?force=1` re-runs all AI
+analysis even when transcripts are unchanged — it costs real money, so it is **admin-token
+only** (§8) and cannot be triggered from the browser.
 
 **Automatic sync:** the dashboard runs a browser-driven daily refresh (DST-safe ET timing) when
 someone has it open. It is **browser-driven**, so it only fires while the app is open in a
@@ -153,26 +167,60 @@ browser — there is no server cron.
 background (a full run can take minutes). Poll `GET /api/sync` and `GET /api/progress` for
 status; the UI does this automatically and refreshes tabs on completion.
 
-**Reset the database** (rare — full re-ingest): this is a destructive operation exposed in
-`db.ts`; use only if the data is corrupt. After reset, run a `?force=1` sync to rebuild.
+**Reset the database** (rare — full re-ingest): `POST /api/reset` wipes every table. Nothing in
+the UI calls it; it is admin-token only, and returns `404` unless `DURO_ADMIN_TOKEN` is set at
+all. Use only if the data is corrupt. After reset, run a `?force=1` sync to rebuild.
 
 **Rotating a key:** issue a new Avoma/Anthropic key, update the Railway Variable, redeploy.
-Rotate whenever ownership changes.
+Rotate whenever ownership changes — including `DURO_ADMIN_TOKEN`.
 
 ---
 
 ## 8. On-demand endpoints (for ad-hoc analysis)
 
-All are plain HTTP against the production URL:
+All are plain HTTP against the production URL. Endpoints that **wipe data or spend Anthropic
+credit** require a shared secret; everything the dashboard itself reads stays open.
 
-- `GET /api/export` — CSV of deal-status/account data.
-- `GET /api/mentions?q=TERM` — count of unique accounts whose transcripts mention TERM (`&format=csv`).
+### Authentication
+
+Set `DURO_ADMIN_TOKEN` in Railway Variables, then send it as the **`x-duro-token`** header:
+
+```bash
+BASE=https://<your-railway-domain>
+TOKEN=<the DURO_ADMIN_TOKEN value>
+
+curl -X POST -H "x-duro-token: $TOKEN" "$BASE/api/feature-scan"
+```
+
+**Fails closed.** If `DURO_ADMIN_TOKEN` is unset on the server, there is no value a caller
+could present, so every protected endpoint is denied (`401`; `/api/reset` returns `404`). A
+misconfigured deploy is locked down, not wide open. Missing or wrong header → `401`.
+
+| Endpoint | Token required | Notes |
+|---|---|---|
+| `POST /api/reset` | **Yes** | Wipes every table. `404` unless the token is configured. |
+| `POST /api/sync?force=1` | **Yes** | Re-analyzes every account — the expensive path. |
+| `POST /api/sync` (incremental) | No | The dashboard's "Sync Now" button and the daily auto-sync. |
+| `POST /api/aggregate` | **Yes** | 3 Claude calls. |
+| `POST /api/feature-scan` | **Yes** | Book-wide scan — one Claude call per account. |
+| `GET /api/feature-scan` | No | Poll-only; reads the in-memory result. |
+| `GET\|POST /api/win-reasons` | **Yes** | Paid Claude synthesis. |
+| `GET\|POST /api/feature-interest` | **Yes** | Paid Claude classification. |
+| `GET /api/sync`, `/api/progress`, `/api/export`, and the tab reads | No | SQLite reads, no spend. |
+
+### The endpoints
+
+- `GET /api/export` — CSV of deal-status/account data. *(open)*
+- `GET /api/mentions?q=TERM` — count of unique accounts whose transcripts mention TERM (`&format=csv`). *(open)*
 - `GET|POST /api/win-reasons?domains=a.com,b.com` — ranked purchase drivers across a set of
-  Closed-Won accounts (`&dryRun=1` to preview matched accounts without an AI call).
-- `GET|POST /api/feature-interest?domains=…` — per-account AI-feature / API-support interest.
+  Closed-Won accounts (`&dryRun=1` to preview matched accounts without an AI call). *(token)*
+- `GET|POST /api/feature-interest?domains=…` — per-account AI-feature / API-support interest. *(token)*
 - `POST /api/feature-scan` — start a background book-wide scan (AI features / API support /
-  build-your-own-PLM-with-AI). Then `GET /api/feature-scan` to poll; `&details=1` for per-account
-  evidence.
+  build-your-own-PLM-with-AI). Then `GET /api/feature-scan` to poll (open); `&details=1` for
+  per-account evidence. *(token to start)*
+
+> **Note:** the passcode gate on the dashboard (`PasscodeGate.tsx`) is client-side only and does
+> **not** protect any `/api/*` route. `DURO_ADMIN_TOKEN` is the only server-side check.
 
 ---
 
@@ -209,6 +257,8 @@ Four mechanisms keep Claude usage down; see `account-analyzer.ts` / `sync-engine
 - [ ] @blakeoc26 can clone, `npm install`, `npm run dev`, and run a `MAX_DEALS`-limited sync locally
 - [ ] @blakeoc26 confirmed the Railway persistent volume is mounted at `/app/data`
 - [ ] @blakeoc26 did a test merge to `main` and watched it deploy
+- [ ] `DURO_ADMIN_TOKEN` generated and set in Railway Variables (see §8 — unset means the
+      guarded endpoints are all denied, and `/api/reset` 404s)
 - [ ] Old keys rotated once @blakeoc26 is set up
 - [ ] Walked through this runbook together
 
@@ -226,14 +276,15 @@ Four mechanisms keep Claude usage down; see `account-analyzer.ts` / `sync-engine
 | **Ingestion logic** | `src/lib/sync-engine.ts` (+ `src/lib/avoma-client.ts`) |
 | **AI analysis logic** | `src/lib/account-analyzer.ts`, `src/lib/aggregate-analyzer.ts` |
 | **AI prompts (editable text)** | `src/prompts/*.md` |
-| **Secrets / config** | Railway → service → **Variables** (never in the repo) |
+| **Secrets / config** | Railway → service → **Variables** (never in the repo) — incl. `DURO_ADMIN_TOKEN` |
+| **API guard** | `src/lib/admin-auth.ts` (`x-duro-token` header, fails closed) |
 | **Build / deploy config** | `nixpacks.toml` |
 | **Deploy history + runtime logs** | Railway → service → **Deployments** (build logs) and **Observability / Logs** (runtime) |
 
 ### Shipping a change (end to end)
 
 1. Make the change on a feature branch (via Claude Code, or locally).
-2. `npm run typecheck && npm run build` to confirm it compiles.
+2. `npm run typecheck && npm run build` to confirm it compiles. CI runs both on the PR.
 3. Open a PR into `main`, review the diff, merge it.
 4. **Railway auto-deploys `main`.** Watch the deploy in Railway → Deployments until it's active.
 5. Verify on the production URL.
@@ -245,19 +296,24 @@ or in Railway → Deployments, redeploy the previous good deployment.
 
 ```bash
 BASE=https://<your-railway-domain>
+TOKEN=<the DURO_ADMIN_TOKEN from Railway Variables>
+AUTH=(-H "x-duro-token: $TOKEN")       # required by the paid/destructive routes
 
-# Sync now (fetch new calls + analyze). Add ?force=1 to re-analyze everything.
-curl -X POST "$BASE/api/sync"          # returns 202; then poll:
+# --- open (no token) ---
+curl -X POST "$BASE/api/sync"          # incremental sync; returns 202, then poll:
 curl "$BASE/api/sync"                   # {isSyncing, lastSyncAt}
 curl "$BASE/api/progress"               # live progress
+curl "$BASE/api/export" -o accounts.csv # CSV export
+curl "$BASE/api/mentions?q=PDM"         # unique accounts mentioning a term
 
-# Ad-hoc analyses
-curl "$BASE/api/export" -o accounts.csv                 # CSV export
-curl "$BASE/api/mentions?q=PDM"                         # unique accounts mentioning a term
-curl "$BASE/api/win-reasons?domains=a.com,b.com"        # ranked purchase drivers
-curl "$BASE/api/feature-interest?domains=a.com,b.com"   # AI / API interest for a set
-curl -X POST "$BASE/api/feature-scan"                   # book-wide 3-signal scan (background)
-curl "$BASE/api/feature-scan"                           # poll; &details=1 for evidence
+# --- token required (spends money / destructive) ---
+curl -X POST "${AUTH[@]}" "$BASE/api/sync?force=1"          # re-analyze EVERYTHING
+curl -X POST "${AUTH[@]}" "$BASE/api/aggregate"             # re-run cross-account only
+curl "${AUTH[@]}" "$BASE/api/win-reasons?domains=a.com,b.com"      # ranked purchase drivers
+curl "${AUTH[@]}" "$BASE/api/feature-interest?domains=a.com,b.com" # AI / API interest
+curl -X POST "${AUTH[@]}" "$BASE/api/feature-scan"          # book-wide scan (background)
+curl "$BASE/api/feature-scan"                               # poll (open); &details=1 for evidence
+curl -X POST "${AUTH[@]}" "$BASE/api/reset"                 # WIPES THE DATABASE
 ```
 
 ### Troubleshooting
@@ -270,4 +326,7 @@ curl "$BASE/api/feature-scan"                           # poll; &details=1 for e
 | "No space left on device" | The Railway volume/disk is full — clear old data or grow the volume. Deletes still work when writes fail. |
 | A deploy didn't pick up your commit | Confirm the commit is on `main` and the Railway deploy references that SHA (Railway deploy IDs are UUIDs, not git SHAs). |
 | Need to know which model is running | Check `ANALYSIS_MODEL` / `AGGREGATE_MODEL` / `ANTHROPIC_MODEL` in Railway Variables; unset = per-tier defaults. |
+| `401` from an endpoint that used to work | It's one of the guarded routes (§8). Send `-H "x-duro-token: $TOKEN"`, and confirm `DURO_ADMIN_TOKEN` is set in Railway Variables — unset means everything guarded is denied. |
+| `404` from `POST /api/reset` | `DURO_ADMIN_TOKEN` isn't set on the server, so reset is disabled entirely. |
+| A sync only processed one account | `MAX_DEALS` is `1` (the `.env.example` default). Set it to `0` for the full book. |
 

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { runAggregateAnalysis } from "@/lib/aggregate-analyzer";
 import { isSyncing } from "@/lib/db";
+import { requireAdmin } from "@/lib/admin-auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,7 +10,10 @@ export const dynamic = "force-dynamic";
 // Map / MEDDPICC) aggregates over the existing per-account analyses. Fast (3 AI
 // calls, ~40s) and cheap — lets us iterate on aggregate prompts/thresholds
 // without re-analyzing every account.
-export async function POST() {
+export async function POST(request: Request) {
+  const denied = requireAdmin(request);
+  if (denied) return denied;
+
   if (isSyncing()) {
     return NextResponse.json({ error: "Sync in progress" }, { status: 409 });
   }
