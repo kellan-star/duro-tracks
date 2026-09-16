@@ -43,6 +43,7 @@ in the repo. The app reads:
 | `MAX_DEALS` | No | Caps how many accounts a sync will process — useful for testing on a small set. **`0` = the full book.** |
 | `DURO_ADMIN_TOKEN` | **Yes, in production** | Shared secret guarding the destructive / paid endpoints (see §8). Any long random string. |
 | `NEXT_PUBLIC_DASHBOARD_PASSCODE` | **Yes** | The dashboard's passcode gate — **exactly 4 digits**. Unset ⇒ the app shows "passcode not configured" instead of the dashboard. **Build-time value — see below.** |
+| `NO_TRANSCRIPT_RECHECK_DAYS` | No | Grace window (days, default `7`) for re-checking meetings Avoma says have no transcript. `0` bypasses the cache and re-polls everything. |
 
 Notes:
 - The two API keys are the only hard requirements to *run*. `DURO_ADMIN_TOKEN` should
@@ -169,6 +170,15 @@ interactive prompt), so don't add it to CI without configuring ESLint first.
 sync (only accounts whose transcripts changed are re-analyzed). `?force=1` re-runs all AI
 analysis even when transcripts are unchanged — it costs real money, so it is **admin-token
 only** (§8) and cannot be triggered from the browser.
+
+**Meetings with no transcript:** many Avoma meetings genuinely have no transcript. Once a sync
+confirms this, the meeting is recorded in the `no_transcript_meetings` table and is not re-polled
+on later syncs — previously every sync re-checked ~200 of them and logged a line for each.
+Meetings from the last `NO_TRANSCRIPT_RECHECK_DAYS` (default 7) are still re-checked, so a
+transcript that lands late is picked up; when one does arrive the meeting is removed from the
+cache. Only a *definitive* "Avoma has nothing" is recorded — a failed lookup (auth, timeout,
+rate limit) is retried next sync rather than remembered. To force a full re-poll, set
+`NO_TRANSCRIPT_RECHECK_DAYS=0`.
 
 **Automatic sync:** the dashboard runs a browser-driven daily refresh (DST-safe ET timing) when
 someone has it open. It is **browser-driven**, so it only fires while the app is open in a
@@ -346,4 +356,5 @@ curl -X POST "${AUTH[@]}" "$BASE/api/reset"                 # WIPES THE DATABASE
 | "Passcode not configured" screen | `NEXT_PUBLIC_DASHBOARD_PASSCODE` was empty at build time. Set it in Railway Variables and **redeploy** — it is inlined during the build, not read at runtime. |
 | Changed the passcode but the old one still works | Same cause: the new value only takes effect after a rebuild. Trigger a redeploy. |
 | Nobody can get past the gate | `NEXT_PUBLIC_DASHBOARD_PASSCODE` is probably not 4 digits — the keypad accepts only 4 numeric characters, so a longer or non-numeric value is unenterable. Fix it and redeploy. |
+| A meeting that now has a transcript isn't being picked up | If it's older than `NO_TRANSCRIPT_RECHECK_DAYS`, it's in the no-transcript cache. Set `NO_TRANSCRIPT_RECHECK_DAYS=0` and run a sync to re-poll everything. |
 
