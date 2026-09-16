@@ -161,11 +161,32 @@ export async function fetchMeetings(fromDate: string, toDate: string): Promise<A
   return allMeetings;
 }
 
-export async function fetchNotesForMeeting(
+/**
+ * Outcome of a fetch that may legitimately have nothing to return.
+ *
+ * The distinction matters: "empty" means Avoma answered and genuinely holds
+ * nothing, which is safe to remember; "error" means we never got an answer
+ * (auth failure, timeout, exhausted retries), which must NOT be remembered as
+ * an absence or a transient outage would permanently hide real content.
+ */
+export type FetchOutcome<T> =
+  | { status: "ok"; value: T }
+  | { status: "empty" }
+  | { status: "error"; message: string };
+
+// A 404 is Avoma positively saying the resource does not exist, so it counts as
+// a genuine absence. Every other failure is treated as unknown.
+function classifyError(e: unknown): { status: "empty" } | { status: "error"; message: string } {
+  const message = e instanceof Error ? e.message : String(e);
+  if (/Avoma API error 404/.test(message)) return { status: "empty" };
+  return { status: "error", message };
+}
+
+export async function fetchNotesResult(
   meetingUuid: string,
   fromDate: string,
   toDate: string
-): Promise<AvomaNote[]> {
+): Promise<FetchOutcome<AvomaNote[]>> {
   // Not cached: fetched at most once per meeting per sync and stored in SQLite;
   // caching every blob would grow memory over a large sync.
   try {
@@ -176,10 +197,22 @@ export async function fetchNotesForMeeting(
       to_date: toDate,
       page_size: "20",
     });
-    return res.results;
-  } catch {
-    return [];
+    return res.results.length > 0
+      ? { status: "ok", value: res.results }
+      : { status: "empty" };
+  } catch (e) {
+    return classifyError(e);
   }
+}
+
+/** Back-compat wrapper: collapses both "nothing there" and "lookup failed" to []. */
+export async function fetchNotesForMeeting(
+  meetingUuid: string,
+  fromDate: string,
+  toDate: string
+): Promise<AvomaNote[]> {
+  const r = await fetchNotesResult(meetingUuid, fromDate, toDate);
+  return r.status === "ok" ? r.value : [];
 }
 
 export interface AvomaRevenueIntelTimeline {
@@ -200,9 +233,9 @@ export interface AvomaTranscription {
   modified?: string;
 }
 
-export async function fetchTranscriptionForMeeting(
+export async function fetchTranscriptionResult(
   meetingUuid: string
-): Promise<string | null> {
+): Promise<FetchOutcome<string>> {
   // Not cached: fetched at most once per meeting per sync and stored in SQLite.
   try {
     const res = await avomaFetch<
@@ -218,13 +251,22 @@ export async function fetchTranscriptionForMeeting(
     } else if ("data" in res && typeof res.data === "string") {
       text = res.data;
     } else {
-      return null;
+      // Avoma answered, but with no transcription payload — a real absence.
+      return { status: "empty" };
     }
 
-    return text.trim() ? text : null;
-  } catch {
-    return null;
+    return text.trim() ? { status: "ok", value: text } : { status: "empty" };
+  } catch (e) {
+    return classifyError(e);
   }
+}
+
+/** Back-compat wrapper: collapses both "no transcript" and "lookup failed" to null. */
+export async function fetchTranscriptionForMeeting(
+  meetingUuid: string
+): Promise<string | null> {
+  const r = await fetchTranscriptionResult(meetingUuid);
+  return r.status === "ok" ? r.value : null;
 }
 
 export async function fetchRevenueIntelTimeline(

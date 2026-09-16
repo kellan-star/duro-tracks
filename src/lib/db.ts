@@ -65,6 +65,15 @@ function initSchema(db: Database.Database): void {
       analyzed_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    -- Negative cache: meetings Avoma has confirmed have no transcript (and no
+    -- notes). Without this, every sync re-polls each one forever, since a miss
+    -- leaves no row in the transcripts table to remember it by.
+    CREATE TABLE IF NOT EXISTS no_transcript_meetings (
+      meeting_uuid TEXT PRIMARY KEY,
+      meeting_date TEXT,
+      last_checked TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_calls_account ON calls(account_domain);
     CREATE INDEX IF NOT EXISTS idx_calls_start ON calls(start_at);
   `);
@@ -179,6 +188,70 @@ export function transcriptExists(meetingUuid: string): boolean {
     .prepare("SELECT 1 FROM transcripts WHERE meeting_uuid = ?")
     .get(meetingUuid);
   return !!row;
+}
+
+// --- No-transcript negative cache ---
+
+/**
+ * Record that Avoma confirmed this meeting has no transcript. Only call this for
+ * a definitive negative (a successful API response carrying nothing), never for a
+ * transient failure — a cached transient would permanently hide a real transcript.
+ * `meetingDate` is the meeting's start time, used for the recheck grace window.
+ */
+export function markNoTranscript(
+  meetingUuid: string,
+  meetingDate: string | null
+): void {
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO no_transcript_meetings (meeting_uuid, meeting_date, last_checked)
+     VALUES (?, ?, datetime('now'))
+     ON CONFLICT(meeting_uuid) DO UPDATE SET
+       meeting_date = COALESCE(excluded.meeting_date, no_transcript_meetings.meeting_date),
+       last_checked = excluded.last_checked`
+  ).run(meetingUuid, meetingDate);
+}
+
+/** Drop a meeting from the negative cache — call whenever a transcript lands. */
+export function clearNoTranscript(meetingUuid: string): void {
+  const db = getDb();
+  db.prepare("DELETE FROM no_transcript_meetings WHERE meeting_uuid = ?").run(
+    meetingUuid
+  );
+}
+
+export function isNoTranscriptCached(meetingUuid: string): boolean {
+  const db = getDb();
+  const row = db
+    .prepare("SELECT 1 FROM no_transcript_meetings WHERE meeting_uuid = ?")
+    .get(meetingUuid);
+  return !!row;
+}
+
+/**
+ * Meetings safe to skip this sync: known to have no transcript AND old enough
+ * that Avoma is no longer likely to produce one. Anything within
+ * `recheckDays` is deliberately left out so late-arriving transcripts are still
+ * picked up. Meetings with an unknown date fall back to when we first recorded
+ * the miss, so they get the same grace window rather than being skipped blind.
+ */
+export function getSkippableNoTranscriptUuids(recheckDays: number): Set<string> {
+  const db = getDb();
+  const rows = db
+    .prepare(
+      `SELECT meeting_uuid FROM no_transcript_meetings
+       WHERE COALESCE(meeting_date, last_checked) < datetime('now', ?)`
+    )
+    .all(`-${recheckDays} days`) as Array<{ meeting_uuid: string }>;
+  return new Set(rows.map((r) => r.meeting_uuid));
+}
+
+export function getNoTranscriptCount(): number {
+  const db = getDb();
+  const row = db
+    .prepare("SELECT COUNT(*) AS n FROM no_transcript_meetings")
+    .get() as { n: number };
+  return row.n;
 }
 
 export function getTranscriptsForAccount(domain: string): string[] {
@@ -462,6 +535,7 @@ export function resetDatabase(): void {
     DELETE FROM aggregate_insights;
     DELETE FROM analysis_results;
     DELETE FROM transcripts;
+    DELETE FROM no_transcript_meetings;
     DELETE FROM calls;
     DELETE FROM accounts;
     DELETE FROM sync_meta;
