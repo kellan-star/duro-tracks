@@ -65,7 +65,11 @@ cp .env.example .env   # fill in AVOMA_API_KEY and ANTHROPIC_API_KEY
 npm run dev            # http://localhost:3000
 ```
 
-The default passcode gate is `0526` (see `src/components/auth/PasscodeGate.tsx`).
+The dashboard is behind a passcode gate (`src/components/auth/PasscodeGate.tsx`).
+Set `NEXT_PUBLIC_DASHBOARD_PASSCODE` in your env to choose it — if it's unset the
+app renders a "passcode not configured" screen instead of the dashboard. It is a
+`NEXT_PUBLIC_*` value, so it is inlined at build time and is **not** a secret from
+anyone inspecting the page, and it does not protect any `/api` route.
 Without API keys the app still builds and runs — the dashboard renders empty;
 `POST /api/sync` will error on the missing Avoma key. Click **Sync now** (or
 `curl -XPOST localhost:3000/api/sync`) to populate the database, and poll
