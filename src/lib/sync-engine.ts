@@ -1,7 +1,7 @@
 import {
   fetchMeetings,
-  fetchNotesForMeeting,
-  fetchTranscriptionForMeeting,
+  fetchNotesResult,
+  fetchTranscriptionResult,
   fetchUsers,
   type AvomaMeeting,
 } from "./avoma-client";
@@ -13,6 +13,10 @@ import {
   upsertTranscript,
   transcriptExists,
   getCallsMissingTranscripts,
+  markNoTranscript,
+  clearNoTranscript,
+  isNoTranscriptCached,
+  getSkippableNoTranscriptUuids,
   upsertAccount,
   getAccountsNeedingAnalysis,
   getTranscriptsForAccount,
@@ -100,6 +104,19 @@ async function doSync(force: boolean): Promise<SyncResult> {
 
   // Filter to completed meetings with tracked reps
   const maxDeals = parseInt(process.env.MAX_DEALS || "0", 10) || Infinity;
+
+  // Grace window for the no-transcript negative cache: meetings this recent are
+  // re-polled even when a previous sync found nothing, since Avoma's
+  // transcription can lag the meeting itself. Set to 0 to bypass the cache and
+  // re-poll every meeting (the escape hatch if an entry is ever wrong).
+  const parsedRecheckDays = parseInt(
+    process.env.NO_TRANSCRIPT_RECHECK_DAYS || "",
+    10
+  );
+  const NO_TRANSCRIPT_RECHECK_DAYS =
+    Number.isFinite(parsedRecheckDays) && parsedRecheckDays >= 0
+      ? parsedRecheckDays
+      : 7;
   const relevantMeetings: AvomaMeeting[] = [];
 
   for (const meeting of avomaMeetings) {
@@ -185,10 +202,35 @@ async function doSync(force: boolean): Promise<SyncResult> {
 
   // Fetch transcripts: new meetings + retry any calls that are still missing transcripts
   const callsMissingTranscripts = getCallsMissingTranscripts();
-  const allNeedingTranscripts = [
+  const candidateUuids = [
     ...newMeetingUuids.filter((uuid) => !transcriptExists(uuid)),
     ...callsMissingTranscripts.filter((uuid) => !newMeetingUuids.includes(uuid)),
   ];
+
+  // Drop meetings Avoma has already confirmed have no transcript, so we stop
+  // re-polling them every sync. Anything within the recheck window is kept in
+  // the list, so a late-arriving transcript is still picked up.
+  const skippable =
+    NO_TRANSCRIPT_RECHECK_DAYS === 0
+      ? new Set<string>()
+      : getSkippableNoTranscriptUuids(NO_TRANSCRIPT_RECHECK_DAYS);
+  const allNeedingTranscripts = candidateUuids.filter((uuid) => !skippable.has(uuid));
+  const skippedCount = candidateUuids.length - allNeedingTranscripts.length;
+
+  if (skippedCount > 0) {
+    console.log(
+      `[duro-tracks] Skipping ${skippedCount} meeting(s) known to have no transcript ` +
+        `(rechecking any from the last ${NO_TRANSCRIPT_RECHECK_DAYS} days)`
+    );
+  }
+
+  // Meeting start times, for dating negative-cache entries.
+  const meetingDates = new Map<string, string | null>();
+  for (const meetings of domainMeetings.values()) {
+    for (const m of meetings) {
+      meetingDates.set(m.uuid, m.start_at || m.created || null);
+    }
+  }
 
   updateProgress(
     "Fetching transcripts",
@@ -212,27 +254,51 @@ async function doSync(force: boolean): Promise<SyncResult> {
     }
 
     // Try transcript first, fall back to notes
-    let text = await fetchTranscriptionForMeeting(uuid);
+    const transcript = await fetchTranscriptionResult(uuid);
+    let text = transcript.status === "ok" ? transcript.value : "";
     let source: "transcript" | "notes" = "transcript";
+
+    // Only a definitive "Avoma has nothing" on BOTH lookups is cacheable. If
+    // either call failed outright we learned nothing, so we leave the meeting in
+    // the worklist rather than risk hiding a transcript that does exist.
+    let lookupFailed = transcript.status === "error";
 
     if (!text) {
       // Use the full sync window for the notes fallback.
       const notesFrom = yearStart.toISOString();
       const notesTo = now.toISOString();
-      const notes = await fetchNotesForMeeting(uuid, notesFrom, notesTo);
-      text = notes
-        .map((n) => (typeof n.data === "string" ? n.data : ""))
-        .filter(Boolean)
-        .join("\n\n");
+      const notesResult = await fetchNotesResult(uuid, notesFrom, notesTo);
+      if (notesResult.status === "error") lookupFailed = true;
+      text =
+        notesResult.status === "ok"
+          ? notesResult.value
+              .map((n) => (typeof n.data === "string" ? n.data : ""))
+              .filter(Boolean)
+              .join("\n\n")
+          : "";
       source = "notes";
     }
 
     if (text?.trim()) {
       upsertTranscript(uuid, text, source);
+      // A transcript arrived after all — make sure a stale negative entry can't
+      // keep it out of future syncs.
+      clearNoTranscript(uuid);
       newTranscriptCount++;
       console.log(`[duro-tracks] Transcript fetched for ${uuid} (${source})`);
+    } else if (lookupFailed) {
+      // Transient (auth/timeout/rate limit). Don't remember this as an absence.
+      console.warn(
+        `[duro-tracks] Transcript lookup failed for ${uuid}; will retry next sync`
+      );
     } else {
-      console.log(`[duro-tracks] No transcript available for ${uuid}`);
+      // Log only the first time we learn a meeting has nothing, so a normal sync
+      // isn't hundreds of identical lines.
+      const alreadyKnown = isNoTranscriptCached(uuid);
+      markNoTranscript(uuid, meetingDates.get(uuid) ?? null);
+      if (!alreadyKnown) {
+        console.log(`[duro-tracks] No transcript available for ${uuid}`);
+      }
     }
   }
 
