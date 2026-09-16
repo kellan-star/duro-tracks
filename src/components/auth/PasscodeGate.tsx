@@ -2,8 +2,51 @@
 
 import { useState, useEffect } from "react";
 
-const PASSCODE = "0526";
+// Configured per environment, never committed. This is a NEXT_PUBLIC_* value, so
+// it is inlined into the browser bundle at build time: it makes the passcode
+// rotatable and keeps it out of source control, but it is NOT a secret from
+// anyone who inspects the page, and it guards no /api route. DURO_ADMIN_TOKEN
+// (src/lib/admin-auth.ts) is the only server-side check.
+//
+// Must be exactly 4 digits: the input below is a numeric keypad capped at 4
+// characters, so anything else cannot be typed in and would lock the dashboard.
+const PASSCODE = (process.env.NEXT_PUBLIC_DASHBOARD_PASSCODE || "").trim();
 const STORAGE_KEY = "tt_auth";
+
+// Shown when NEXT_PUBLIC_DASHBOARD_PASSCODE is missing at build time. Because the
+// value is inlined during `next build`, setting it afterwards is not enough — the
+// app has to be rebuilt.
+function NotConfigured() {
+  return (
+    <div style={{
+      minHeight: "100vh", background: "var(--bg)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+    }}>
+      <div style={{
+        background: "var(--surface)", border: "1px solid var(--border)",
+        borderRadius: "var(--r-lg)", padding: "40px 48px",
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 16,
+        boxShadow: "var(--shadow-sm)", maxWidth: 420, width: "100%",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span className="tt-mark lg" aria-hidden="true" />
+          <span style={{ fontSize: 20, fontWeight: 600, letterSpacing: "-0.015em" }}>Duro Tracks</span>
+        </div>
+
+        <p style={{ fontSize: 15, fontWeight: 600, textAlign: "center", margin: 0 }}>
+          Passcode not configured
+        </p>
+
+        <p style={{ fontSize: 13, color: "var(--text-3)", textAlign: "center", margin: 0, lineHeight: 1.6 }}>
+          This deployment has no <code>NEXT_PUBLIC_DASHBOARD_PASSCODE</code> set, so the
+          dashboard is locked. An administrator needs to set it in the service&apos;s
+          environment variables and <strong>redeploy</strong> — the value is baked in at
+          build time, so setting it without a rebuild has no effect.
+        </p>
+      </div>
+    </div>
+  );
+}
 
 export function PasscodeGate({ children }: { children: React.ReactNode }) {
   const [authenticated, setAuthenticated] = useState(false);
@@ -19,6 +62,10 @@ export function PasscodeGate({ children }: { children: React.ReactNode }) {
   }, []);
 
   if (!mounted) return null;
+
+  // No passcode configured: refuse to render the dashboard rather than letting an
+  // empty input match an empty passcode.
+  if (!PASSCODE) return <NotConfigured />;
 
   if (authenticated) return <>{children}</>;
 

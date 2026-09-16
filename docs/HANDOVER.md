@@ -42,6 +42,7 @@ in the repo. The app reads:
 | `BATCH_ANALYSIS` | No | Toggles the Message Batches API path for per-account analysis (on by default) |
 | `MAX_DEALS` | No | Caps how many accounts a sync will process — useful for testing on a small set. **`0` = the full book.** |
 | `DURO_ADMIN_TOKEN` | **Yes, in production** | Shared secret guarding the destructive / paid endpoints (see §8). Any long random string. |
+| `NEXT_PUBLIC_DASHBOARD_PASSCODE` | **Yes** | The dashboard's passcode gate — **exactly 4 digits**. Unset ⇒ the app shows "passcode not configured" instead of the dashboard. **Build-time value — see below.** |
 | `NO_TRANSCRIPT_RECHECK_DAYS` | No | Grace window (days, default `7`) for re-checking meetings Avoma says have no transcript. `0` bypasses the cache and re-polls everything. |
 
 Notes:
@@ -50,6 +51,15 @@ Notes:
 - If you rotate a key, update it in Railway Variables and redeploy (or trigger a redeploy).
 - **`MAX_DEALS` gotcha:** `.env.example` ships `MAX_DEALS=1`, so copying it verbatim limits
   **every** sync to a single account. Set `MAX_DEALS=0` once you want the full book of business.
+- **`NEXT_PUBLIC_DASHBOARD_PASSCODE` must be exactly 4 digits.** The gate is a numeric keypad
+  capped at 4 characters, so a longer or non-numeric passcode cannot be typed in — setting one
+  locks everyone out of the dashboard until it is corrected and the service rebuilds.
+- **`NEXT_PUBLIC_DASHBOARD_PASSCODE` is baked in at build time.** Unlike every other variable
+  here, `NEXT_PUBLIC_*` values are inlined into the browser bundle during `npm run build`, not
+  read at runtime. Changing it in Railway Variables therefore does **nothing until the service
+  rebuilds** — trigger a redeploy after changing it. It is also visible to anyone who inspects
+  the page, and it protects no `/api` route; it keeps the passcode out of git and makes it
+  rotatable, nothing more. Server-side protection is `DURO_ADMIN_TOKEN` (§8).
 
 ---
 
@@ -109,6 +119,7 @@ ANTHROPIC_API_KEY=sk-ant-...
 AVOMA_API_KEY=...
 MAX_DEALS=3          # optional: keep test runs small/cheap (0 = full book)
 DURO_ADMIN_TOKEN=dev-token-any-string   # needed to call the endpoints in §8
+NEXT_PUBLIC_DASHBOARD_PASSCODE=0000     # 4 digits; else the UI shows "passcode not configured"
 EOF
 
 npm run dev          # http://localhost:3000
@@ -269,6 +280,8 @@ Four mechanisms keep Claude usage down; see `account-analyzer.ts` / `sync-engine
 - [ ] @blakeoc26 did a test merge to `main` and watched it deploy
 - [ ] `DURO_ADMIN_TOKEN` generated and set in Railway Variables (see §8 — unset means the
       guarded endpoints are all denied, and `/api/reset` 404s)
+- [ ] `NEXT_PUBLIC_DASHBOARD_PASSCODE` (exactly 4 digits) set in Railway Variables and the
+      service redeployed (build-time value — see §2)
 - [ ] Old keys rotated once @blakeoc26 is set up
 - [ ] Walked through this runbook together
 
@@ -288,6 +301,7 @@ Four mechanisms keep Claude usage down; see `account-analyzer.ts` / `sync-engine
 | **AI prompts (editable text)** | `src/prompts/*.md` |
 | **Secrets / config** | Railway → service → **Variables** (never in the repo) — incl. `DURO_ADMIN_TOKEN` |
 | **API guard** | `src/lib/admin-auth.ts` (`x-duro-token` header, fails closed) |
+| **Dashboard passcode** | `NEXT_PUBLIC_DASHBOARD_PASSCODE` in Railway Variables (exactly 4 digits); gate in `src/components/auth/PasscodeGate.tsx`. Build-time value — redeploy after changing it. |
 | **Build / deploy config** | `nixpacks.toml` |
 | **Deploy history + runtime logs** | Railway → service → **Deployments** (build logs) and **Observability / Logs** (runtime) |
 
@@ -339,5 +353,8 @@ curl -X POST "${AUTH[@]}" "$BASE/api/reset"                 # WIPES THE DATABASE
 | `401` from an endpoint that used to work | It's one of the guarded routes (§8). Send `-H "x-duro-token: $TOKEN"`, and confirm `DURO_ADMIN_TOKEN` is set in Railway Variables — unset means everything guarded is denied. |
 | `404` from `POST /api/reset` | `DURO_ADMIN_TOKEN` isn't set on the server, so reset is disabled entirely. |
 | A sync only processed one account | `MAX_DEALS` is `1` (the `.env.example` default). Set it to `0` for the full book. |
+| "Passcode not configured" screen | `NEXT_PUBLIC_DASHBOARD_PASSCODE` was empty at build time. Set it in Railway Variables and **redeploy** — it is inlined during the build, not read at runtime. |
+| Changed the passcode but the old one still works | Same cause: the new value only takes effect after a rebuild. Trigger a redeploy. |
+| Nobody can get past the gate | `NEXT_PUBLIC_DASHBOARD_PASSCODE` is probably not 4 digits — the keypad accepts only 4 numeric characters, so a longer or non-numeric value is unenterable. Fix it and redeploy. |
 | A meeting that now has a transcript isn't being picked up | If it's older than `NO_TRANSCRIPT_RECHECK_DAYS`, it's in the no-transcript cache. Set `NO_TRANSCRIPT_RECHECK_DAYS=0` and run a sync to re-poll everything. |
 
