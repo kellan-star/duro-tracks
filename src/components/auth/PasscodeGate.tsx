@@ -7,6 +7,9 @@ import { useState, useEffect } from "react";
 // rotatable and keeps it out of source control, but it is NOT a secret from
 // anyone who inspects the page, and it guards no /api route. DURO_ADMIN_TOKEN
 // (src/lib/admin-auth.ts) is the only server-side check.
+//
+// Must be exactly 4 digits: the input below is a numeric keypad capped at 4
+// characters, so anything else cannot be typed in and would lock the dashboard.
 const PASSCODE = (process.env.NEXT_PUBLIC_DASHBOARD_PASSCODE || "").trim();
 const STORAGE_KEY = "tt_auth";
 
@@ -100,10 +103,12 @@ export function PasscodeGate({ children }: { children: React.ReactNode }) {
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12, width: "100%" }}>
           <input
             type="password"
+            inputMode="numeric"
+            maxLength={4}
             value={code}
             onChange={(e) => {
               setError(false);
-              setCode(e.target.value);
+              setCode(e.target.value.replace(/\D/g, "").slice(0, 4));
             }}
             placeholder="••••"
             autoFocus

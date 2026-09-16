@@ -66,8 +66,9 @@ npm run dev            # http://localhost:3000
 ```
 
 The dashboard is behind a passcode gate (`src/components/auth/PasscodeGate.tsx`).
-Set `NEXT_PUBLIC_DASHBOARD_PASSCODE` in your env to choose it — if it's unset the
-app renders a "passcode not configured" screen instead of the dashboard. It is a
+Set `NEXT_PUBLIC_DASHBOARD_PASSCODE` in your env to choose it — it must be
+exactly 4 digits (the gate is a numeric keypad), and if it's unset the app
+renders a "passcode not configured" screen instead of the dashboard. It is a
 `NEXT_PUBLIC_*` value, so it is inlined at build time and is **not** a secret from
 anyone inspecting the page, and it does not protect any `/api` route.
 Without API keys the app still builds and runs — the dashboard renders empty;
