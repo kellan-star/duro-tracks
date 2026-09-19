@@ -190,6 +190,39 @@ export function transcriptExists(meetingUuid: string): boolean {
   return !!row;
 }
 
+export interface TranscriptExportRow {
+  meeting_uuid: string;
+  account_domain: string | null;
+  company_name: string | null;
+  subject: string | null;
+  start_at: string | null;
+  source: string;
+  content: string;
+  fetched_at: string;
+}
+
+// Every stored transcript/notes row, joined to its call + account, for a bulk
+// export. Ordered by account then meeting time so the zip groups sensibly.
+export function getAllTranscripts(): TranscriptExportRow[] {
+  const db = getDb();
+  return db
+    .prepare(
+      `SELECT t.meeting_uuid  AS meeting_uuid,
+              c.account_domain AS account_domain,
+              a.company_name   AS company_name,
+              c.subject        AS subject,
+              c.start_at       AS start_at,
+              t.source         AS source,
+              t.content        AS content,
+              t.fetched_at     AS fetched_at
+       FROM transcripts t
+       LEFT JOIN calls c    ON c.meeting_uuid = t.meeting_uuid
+       LEFT JOIN accounts a ON a.domain = c.account_domain
+       ORDER BY c.account_domain IS NULL, c.account_domain ASC, c.start_at ASC`
+    )
+    .all() as TranscriptExportRow[];
+}
+
 // --- No-transcript negative cache ---
 
 /**
