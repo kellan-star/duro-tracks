@@ -234,15 +234,17 @@ async function main() {
     const uuid = m.uuid;
     if (!uuid) continue;
 
-    const team = assignTeam(m);
-    const teamId = await ensureSubfolder(drive, GDRIVE_FOLDER_ID, team);
-    const domain = accountDomain(m) || "_ungrouped";
-    const subId = await ensureSubfolder(drive, teamId, domain);
-
+    // Fetch content FIRST — only create folders when there's something to store,
+    // so meetings with no transcript don't leave empty account folders behind.
     let content = await fetchTranscript(uuid);
     let suffix = "";
     if (!content) { content = await fetchNotes(uuid, fromISO, toISO); suffix = ".notes"; }
     if (!content) { noContent++; continue; }
+
+    const team = assignTeam(m);
+    const teamId = await ensureSubfolder(drive, GDRIVE_FOLDER_ID, team);
+    const domain = accountDomain(m) || "_ungrouped";
+    const subId = await ensureSubfolder(drive, teamId, domain);
 
     const name = `${uuid}${suffix}.txt`;
     if (await fileExists(drive, subId, name)) { skipped++; continue; }
