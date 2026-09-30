@@ -4,7 +4,12 @@ on:
   schedule:
     # 08:00 UTC every Monday. Adjust as needed (UTC).
     - cron: "0 8 * * 1"
-  workflow_dispatch: {}   # allow manual runs from the Actions tab
+  workflow_dispatch:
+    inputs:
+      lookback_days:
+        description: "Days of history to scan (use a large value like 400 for a one-time backfill)"
+        required: false
+        default: "14"
 
 concurrency:
   group: avoma-drive-sync
@@ -13,7 +18,7 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -31,5 +36,6 @@ jobs:
           AVOMA_API_KEY: ${{ secrets.AVOMA_API_KEY }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
-          LOOKBACK_DAYS: "14"
+          # schedule runs use the default (14); manual runs can override for a backfill
+          LOOKBACK_DAYS: ${{ github.event.inputs.lookback_days || '14' }}
         run: node sync.mjs

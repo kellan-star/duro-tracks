@@ -1,23 +1,30 @@
 #!/usr/bin/env node
 /**
- * Weekly Avoma -> Google Drive transcript sync.
+ * Weekly Avoma -> Google Drive transcript sync, routed by sales team.
  *
  * Standalone: needs only Node 20+ (built-in fetch) and `googleapis`. No app,
  * no SQLite, no Railway. Intended to run from GitHub Actions on a schedule.
  *
- * For each meeting in a recent window it downloads the transcript (or notes as a
- * fallback) and uploads it to a Google Drive folder — grouped into a subfolder
- * per account domain — skipping anything already there so re-runs are cheap.
+ * For each meeting in the scanned window it downloads the transcript (or notes
+ * as a fallback) and uploads it to:
+ *
+ *     <GDRIVE_FOLDER_ID> / <Team> / <account-domain> / <meeting-uuid>.txt
+ *
+ * The team is decided by which configured rep attended the call (see
+ * teams.json). Meetings with no known rep go under "_unassigned". Files already
+ * present are skipped, so re-runs (and overlapping windows) are cheap.
  *
  * Env:
  *   AVOMA_API_KEY                 (required) Avoma REST key
  *   GOOGLE_SERVICE_ACCOUNT_JSON   (required) service-account key JSON (raw or base64)
- *   GDRIVE_FOLDER_ID              (required) destination Drive folder id
- *   LOOKBACK_DAYS                 (optional) window to scan, default 14
+ *   GDRIVE_FOLDER_ID              (required) the "Avoma Sales Transcripts" folder id
+ *   LOOKBACK_DAYS                 (optional) window to scan, default 14. Set large
+ *                                 (e.g. 400) for a one-time historical backfill.
  *   INTERNAL_DOMAINS             (optional) comma list of our own domains to ignore
  *                                 when guessing the account, default durolabs.co,altium.com
  */
 import { google } from "googleapis";
+import { readFileSync } from "fs";
 
 const AVOMA_API_KEY = need("AVOMA_API_KEY");
 const GDRIVE_FOLDER_ID = need("GDRIVE_FOLDER_ID");
@@ -31,11 +38,30 @@ const PERSONAL_DOMAINS = new Set([
 ]);
 
 const AVOMA_BASE = "https://api.avoma.com";
+const SLICE_DAYS = 30; // chunk long windows so Avoma never sees a huge date range
+
+// team name -> Set of rep emails (lowercased)
+const TEAMS = loadTeams();
+// rep email -> team name
+const REP_TO_TEAM = new Map();
+for (const [team, emails] of Object.entries(TEAMS)) {
+  for (const e of emails) REP_TO_TEAM.set(e.toLowerCase(), team);
+}
 
 function need(name) {
   const v = process.env[name];
   if (!v) { console.error(`Missing required env: ${name}`); process.exit(1); }
   return v;
+}
+
+function loadTeams() {
+  const path = new URL("./teams.json", import.meta.url);
+  const raw = JSON.parse(readFileSync(path, "utf8"));
+  const out = {};
+  for (const [team, emails] of Object.entries(raw)) {
+    out[team] = (Array.isArray(emails) ? emails : []).map((e) => String(e).toLowerCase());
+  }
+  return out;
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -49,7 +75,7 @@ async function avoma(path, params) {
     let res;
     try {
       res = await fetch(url, { headers: { Authorization: `Bearer ${AVOMA_API_KEY}` } });
-    } catch (e) {
+    } catch {
       await sleep(Math.min(2000 * 2 ** attempt, 15000));
       continue;
     }
@@ -65,7 +91,7 @@ async function avoma(path, params) {
   throw new Error(`Avoma: retries exhausted for ${path}`);
 }
 
-async function fetchMeetings(fromISO, toISO) {
+async function fetchMeetingsSlice(fromISO, toISO) {
   const all = [];
   let page = 1;
   for (;;) {
@@ -75,6 +101,18 @@ async function fetchMeetings(fromISO, toISO) {
     for (const m of res.results || []) all.push(m);
     if (!res.next) break;
     page++;
+  }
+  return all;
+}
+
+async function fetchMeetings(fromDate, toDate) {
+  const all = [];
+  let cursor = new Date(fromDate);
+  while (cursor < toDate) {
+    const sliceEnd = new Date(Math.min(cursor.getTime() + SLICE_DAYS * 864e5, toDate.getTime()));
+    const part = await fetchMeetingsSlice(cursor.toISOString(), sliceEnd.toISOString());
+    all.push(...part);
+    cursor = sliceEnd;
   }
   return all;
 }
@@ -97,11 +135,30 @@ async function fetchNotes(uuid, fromISO, toISO) {
   return text.trim() ? text : null;
 }
 
+function meetingEmails(meeting) {
+  const emails = [];
+  if (meeting.organizer_email) emails.push(String(meeting.organizer_email).toLowerCase());
+  for (const a of meeting.attendees || []) if (a.email) emails.push(String(a.email).toLowerCase());
+  return emails;
+}
+
+// Which team owns this call = the team whose reps attended most. "_unassigned"
+// when no configured rep is present.
+function assignTeam(meeting) {
+  const tally = new Map();
+  for (const e of meetingEmails(meeting)) {
+    const team = REP_TO_TEAM.get(e);
+    if (team) tally.set(team, (tally.get(team) || 0) + 1);
+  }
+  let best = "_unassigned", bestN = 0;
+  for (const [team, n] of tally) if (n > bestN) { best = team; bestN = n; }
+  return best;
+}
+
 function accountDomain(meeting) {
   const counts = new Map();
-  for (const a of meeting.attendees || []) {
-    const email = (a.email || "").toLowerCase();
-    const dom = email.split("@")[1];
+  for (const e of meetingEmails(meeting)) {
+    const dom = e.split("@")[1];
     if (!dom || INTERNAL_DOMAINS.includes(dom) || PERSONAL_DOMAINS.has(dom)) continue;
     counts.set(dom, (counts.get(dom) || 0) + 1);
   }
@@ -159,36 +216,39 @@ async function uploadText(drive, parentId, name, content) {
 // --- Main --------------------------------------------------------------------
 async function main() {
   const now = new Date();
-  const from = new Date(now.getTime() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
+  const from = new Date(now.getTime() - LOOKBACK_DAYS * 864e5);
   const fromISO = from.toISOString();
   const toISO = now.toISOString();
 
   console.log(`[avoma-drive] window ${fromISO} .. ${toISO} (last ${LOOKBACK_DAYS} days)`);
+  console.log(`[avoma-drive] teams: ${Object.keys(TEAMS).map((t) => `${t}(${TEAMS[t].length})`).join(", ")}`);
   const drive = driveClient();
 
-  const meetings = await fetchMeetings(fromISO, toISO);
+  const meetings = await fetchMeetings(from, now);
   console.log(`[avoma-drive] ${meetings.length} meetings in window`);
 
+  const byTeam = {};
   let uploaded = 0, skipped = 0, noContent = 0;
+
   for (const m of meetings) {
     const uuid = m.uuid;
     if (!uuid) continue;
 
+    const team = assignTeam(m);
+    const teamId = await ensureSubfolder(drive, GDRIVE_FOLDER_ID, team);
     const domain = accountDomain(m) || "_ungrouped";
-    const subId = await ensureSubfolder(drive, GDRIVE_FOLDER_ID, domain);
+    const subId = await ensureSubfolder(drive, teamId, domain);
 
     let content = await fetchTranscript(uuid);
     let suffix = "";
-    if (!content) {
-      content = await fetchNotes(uuid, fromISO, toISO);
-      suffix = ".notes";
-    }
+    if (!content) { content = await fetchNotes(uuid, fromISO, toISO); suffix = ".notes"; }
     if (!content) { noContent++; continue; }
 
     const name = `${uuid}${suffix}.txt`;
     if (await fileExists(drive, subId, name)) { skipped++; continue; }
 
     const header =
+      `Team: ${team}\n` +
       `Account domain: ${domain}\n` +
       `Meeting: ${m.subject || "(no subject)"}\n` +
       `Meeting UUID: ${uuid}\n` +
@@ -197,10 +257,12 @@ async function main() {
       `${"-".repeat(60)}\n\n`;
     await uploadText(drive, subId, name, header + content);
     uploaded++;
+    byTeam[team] = (byTeam[team] || 0) + 1;
     if (uploaded % 10 === 0) console.log(`[avoma-drive] uploaded ${uploaded}...`);
   }
 
   console.log(`[avoma-drive] done. uploaded=${uploaded} skipped(existing)=${skipped} no-transcript=${noContent}`);
+  console.log(`[avoma-drive] uploaded by team: ${JSON.stringify(byTeam)}`);
 }
 
 main().catch((e) => { console.error("[avoma-drive] FAILED:", e); process.exit(1); });
