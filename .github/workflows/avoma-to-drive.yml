@@ -1,0 +1,35 @@
+name: Avoma -> Google Drive (weekly)
+
+on:
+  schedule:
+    # 08:00 UTC every Monday. Adjust as needed (UTC).
+    - cron: "0 8 * * 1"
+  workflow_dispatch: {}   # allow manual runs from the Actions tab
+
+concurrency:
+  group: avoma-drive-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install deps
+        working-directory: scripts/avoma-drive
+        run: npm install --no-audit --no-fund
+
+      - name: Run sync
+        working-directory: scripts/avoma-drive
+        env:
+          AVOMA_API_KEY: ${{ secrets.AVOMA_API_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+          LOOKBACK_DAYS: "14"
+        run: node sync.mjs
