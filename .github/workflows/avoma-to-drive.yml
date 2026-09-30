@@ -1,0 +1,41 @@
+name: Avoma -> Google Drive (weekly)
+
+on:
+  schedule:
+    # 08:00 UTC every Monday. Adjust as needed (UTC).
+    - cron: "0 8 * * 1"
+  workflow_dispatch:
+    inputs:
+      lookback_days:
+        description: "Days of history to scan (use a large value like 400 for a one-time backfill)"
+        required: false
+        default: "14"
+
+concurrency:
+  group: avoma-drive-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install deps
+        working-directory: scripts/avoma-drive
+        run: npm install --no-audit --no-fund
+
+      - name: Run sync
+        working-directory: scripts/avoma-drive
+        env:
+          AVOMA_API_KEY: ${{ secrets.AVOMA_API_KEY }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+          # schedule runs use the default (14); manual runs can override for a backfill
+          LOOKBACK_DAYS: ${{ github.event.inputs.lookback_days || '14' }}
+        run: node sync.mjs

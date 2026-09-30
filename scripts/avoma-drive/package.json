@@ -1,0 +1,9 @@
+{
+  "name": "avoma-drive-sync",
+  "private": true,
+  "type": "module",
+  "description": "Weekly Avoma -> Google Drive transcript sync (standalone; no app/DB).",
+  "dependencies": {
+    "googleapis": "^144.0.0"
+  }
+}
