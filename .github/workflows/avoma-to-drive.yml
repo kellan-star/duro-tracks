@@ -18,7 +18,8 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Weekly runs finish in minutes; a large one-time backfill needs much longer.
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v4
 

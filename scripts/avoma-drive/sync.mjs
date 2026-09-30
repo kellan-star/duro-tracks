@@ -204,20 +204,26 @@ async function withRetry(fn, label) {
   }
 }
 
-async function ensureSubfolder(drive, parentId, name) {
+// Find a subfolder by name WITHOUT creating it. Returns id or null.
+async function lookupFolder(drive, parentId, name) {
   const key = `${parentId}/${name}`;
   if (folderCache.has(key)) return folderCache.get(key);
   const q = `'${parentId}' in parents and name = ${JSON.stringify(name)} and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
-  const list = await withRetry(() => drive.files.list({ q, fields: "files(id,name)", ...ALL }), "list folder");
-  let id = list.data.files?.[0]?.id;
-  if (!id) {
-    const created = await withRetry(() => drive.files.create({
-      requestBody: { name, mimeType: "application/vnd.google-apps.folder", parents: [parentId] },
-      fields: "id", ...ALL,
-    }), "create folder");
-    id = created.data.id;
-  }
-  folderCache.set(key, id);
+  const list = await withRetry(() => drive.files.list({ q, fields: "files(id)", ...ALL }), "lookup folder");
+  const id = list.data.files?.[0]?.id || null;
+  if (id) folderCache.set(key, id);
+  return id;
+}
+
+async function ensureSubfolder(drive, parentId, name) {
+  const existing = await lookupFolder(drive, parentId, name);
+  if (existing) return existing;
+  const created = await withRetry(() => drive.files.create({
+    requestBody: { name, mimeType: "application/vnd.google-apps.folder", parents: [parentId] },
+    fields: "id", ...ALL,
+  }), "create folder");
+  const id = created.data.id;
+  folderCache.set(`${parentId}/${name}`, id);
   return id;
 }
 
@@ -269,20 +275,28 @@ async function main() {
     const uuid = m.uuid;
     if (!uuid) continue;
 
-    // Fetch content FIRST — only create folders when there's something to store,
+    const team = assignTeam(m);
+    const domain = accountDomain(m) || "_ungrouped";
+
+    // Resume-friendly pre-check: if this meeting is already stored, skip WITHOUT
+    // hitting Avoma. Look up (don't create) the target folder and its file set.
+    const preTeamId = await lookupFolder(drive, GDRIVE_FOLDER_ID, team);
+    const preSubId = preTeamId ? await lookupFolder(drive, preTeamId, domain) : null;
+    if (preSubId) {
+      const have = await existingNames(drive, preSubId);
+      if (have.has(`${uuid}.txt`) || have.has(`${uuid}.notes.txt`)) { skipped++; continue; }
+    }
+
+    // Not already stored — now fetch content. Only create folders if we get some,
     // so meetings with no transcript don't leave empty account folders behind.
     let content = await fetchTranscript(uuid);
     let suffix = "";
     if (!content) { content = await fetchNotes(uuid, fromISO, toISO); suffix = ".notes"; }
     if (!content) { noContent++; continue; }
 
-    const team = assignTeam(m);
     const teamId = await ensureSubfolder(drive, GDRIVE_FOLDER_ID, team);
-    const domain = accountDomain(m) || "_ungrouped";
     const subId = await ensureSubfolder(drive, teamId, domain);
-
     const name = `${uuid}${suffix}.txt`;
-    if ((await existingNames(drive, subId)).has(name)) { skipped++; continue; }
 
     const header =
       `Team: ${team}\n` +
