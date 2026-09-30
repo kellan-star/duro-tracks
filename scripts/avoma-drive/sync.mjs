@@ -180,37 +180,72 @@ function driveClient() {
 }
 
 const ALL = { supportsAllDrives: true, includeItemsFromAllDrives: true };
-const folderCache = new Map();
+const folderCache = new Map();   // "parentId/name" -> folder id
+const folderFiles = new Map();   // folderId -> Set(existing file names)
+
+// Retry Drive calls on Google's transient limits. A big backfill easily trips
+// the per-user write rate limit (403 userRateLimitExceeded / rateLimitExceeded)
+// and the sharing-quota 429s; both clear on backoff.
+async function withRetry(fn, label) {
+  for (let attempt = 0; attempt < 7; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      const status = e?.status || e?.code;
+      const reason = e?.errors?.[0]?.reason || "";
+      const retryable =
+        status === 429 || status === 500 || status === 502 || status === 503 ||
+        (status === 403 && /rateLimitExceeded|userRateLimitExceeded/i.test(reason));
+      if (!retryable || attempt === 6) throw e;
+      const wait = Math.min(1000 * 2 ** attempt, 32000) + Math.floor(Math.random() * 500);
+      console.log(`[avoma-drive] ${label}: ${reason || status} — backing off ${wait}ms (attempt ${attempt + 1})`);
+      await sleep(wait);
+    }
+  }
+}
 
 async function ensureSubfolder(drive, parentId, name) {
   const key = `${parentId}/${name}`;
   if (folderCache.has(key)) return folderCache.get(key);
   const q = `'${parentId}' in parents and name = ${JSON.stringify(name)} and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
-  const list = await drive.files.list({ q, fields: "files(id,name)", ...ALL });
+  const list = await withRetry(() => drive.files.list({ q, fields: "files(id,name)", ...ALL }), "list folder");
   let id = list.data.files?.[0]?.id;
   if (!id) {
-    const created = await drive.files.create({
+    const created = await withRetry(() => drive.files.create({
       requestBody: { name, mimeType: "application/vnd.google-apps.folder", parents: [parentId] },
       fields: "id", ...ALL,
-    });
+    }), "create folder");
     id = created.data.id;
   }
   folderCache.set(key, id);
   return id;
 }
 
-async function fileExists(drive, parentId, name) {
-  const q = `'${parentId}' in parents and name = ${JSON.stringify(name)} and trashed = false`;
-  const list = await drive.files.list({ q, fields: "files(id)", ...ALL });
-  return (list.data.files?.length || 0) > 0;
+// Load (once) the set of file names already in a folder, so we don't do a list
+// call per file — fewer API calls = far less chance of hitting the rate limit.
+async function existingNames(drive, folderId) {
+  if (folderFiles.has(folderId)) return folderFiles.get(folderId);
+  const names = new Set();
+  let pageToken;
+  do {
+    const res = await withRetry(() => drive.files.list({
+      q: `'${folderId}' in parents and trashed = false`,
+      fields: "nextPageToken, files(name)", pageSize: 1000, pageToken, ...ALL,
+    }), "list files");
+    for (const f of res.data.files || []) names.add(f.name);
+    pageToken = res.data.nextPageToken;
+  } while (pageToken);
+  folderFiles.set(folderId, names);
+  return names;
 }
 
 async function uploadText(drive, parentId, name, content) {
-  await drive.files.create({
+  await withRetry(() => drive.files.create({
     requestBody: { name, parents: [parentId] },
     media: { mimeType: "text/plain", body: content },
     fields: "id", ...ALL,
-  });
+  }), "upload");
+  folderFiles.get(parentId)?.add(name);
 }
 
 // --- Main --------------------------------------------------------------------
@@ -247,7 +282,7 @@ async function main() {
     const subId = await ensureSubfolder(drive, teamId, domain);
 
     const name = `${uuid}${suffix}.txt`;
-    if (await fileExists(drive, subId, name)) { skipped++; continue; }
+    if ((await existingNames(drive, subId)).has(name)) { skipped++; continue; }
 
     const header =
       `Team: ${team}\n` +
@@ -261,6 +296,7 @@ async function main() {
     uploaded++;
     byTeam[team] = (byTeam[team] || 0) + 1;
     if (uploaded % 10 === 0) console.log(`[avoma-drive] uploaded ${uploaded}...`);
+    await sleep(150); // gentle pacing to stay under Drive's per-user write rate limit
   }
 
   console.log(`[avoma-drive] done. uploaded=${uploaded} skipped(existing)=${skipped} no-transcript=${noContent}`);
