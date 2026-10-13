@@ -22,6 +22,9 @@
  *                                 (e.g. 400) for a one-time historical backfill.
  *   INTERNAL_DOMAINS             (optional) comma list of our own domains to ignore
  *                                 when guessing the account, default durolabs.co,altium.com
+ *   ONLY_CONFIGURED_TEAMS         (optional) 1/true to skip meetings that match no
+ *                                 team in teams.json (no "_unassigned" folder) —
+ *                                 i.e. pull only the configured team(s)' calls.
  */
 import { google } from "googleapis";
 import { readFileSync } from "fs";
@@ -30,6 +33,9 @@ const AVOMA_API_KEY = need("AVOMA_API_KEY");
 const GDRIVE_FOLDER_ID = need("GDRIVE_FOLDER_ID");
 const SA_RAW = need("GOOGLE_SERVICE_ACCOUNT_JSON");
 const LOOKBACK_DAYS = parseInt(process.env.LOOKBACK_DAYS || "14", 10);
+// When set, skip meetings that don't match any team in teams.json (no
+// "_unassigned" folder) — use it to pull only the configured team(s)' calls.
+const ONLY_CONFIGURED_TEAMS = /^(1|true|yes)$/i.test(process.env.ONLY_CONFIGURED_TEAMS || "");
 const INTERNAL_DOMAINS = (process.env.INTERNAL_DOMAINS || "durolabs.co,altium.com")
   .split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
 const PERSONAL_DOMAINS = new Set([
@@ -269,13 +275,14 @@ async function main() {
   console.log(`[avoma-drive] ${meetings.length} meetings in window`);
 
   const byTeam = {};
-  let uploaded = 0, skipped = 0, noContent = 0;
+  let uploaded = 0, skipped = 0, noContent = 0, offTeam = 0;
 
   for (const m of meetings) {
     const uuid = m.uuid;
     if (!uuid) continue;
 
     const team = assignTeam(m);
+    if (ONLY_CONFIGURED_TEAMS && team === "_unassigned") { offTeam++; continue; }
     const domain = accountDomain(m) || "_ungrouped";
 
     // Resume-friendly pre-check: if this meeting is already stored, skip WITHOUT
@@ -313,7 +320,7 @@ async function main() {
     await sleep(150); // gentle pacing to stay under Drive's per-user write rate limit
   }
 
-  console.log(`[avoma-drive] done. uploaded=${uploaded} skipped(existing)=${skipped} no-transcript=${noContent}`);
+  console.log(`[avoma-drive] done. uploaded=${uploaded} skipped(existing)=${skipped} no-transcript=${noContent}${ONLY_CONFIGURED_TEAMS ? ` off-team=${offTeam}` : ""}`);
   console.log(`[avoma-drive] uploaded by team: ${JSON.stringify(byTeam)}`);
 }
 
