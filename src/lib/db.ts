@@ -117,6 +117,24 @@ export function setLastSyncTimestamp(ts: string): void {
   ).run("last_sync_at", ts);
 }
 
+// When the cross-account aggregate (3 Sonnet calls over the whole book) last ran.
+// Used to throttle it — the aggregate is the most expensive part of a sync.
+export function getLastAggregateTimestamp(): string | null {
+  const db = getDb();
+  const row = db
+    .prepare("SELECT value FROM sync_meta WHERE key = ?")
+    .get("last_aggregate_at") as { value: string } | undefined;
+  return row?.value ?? null;
+}
+
+export function setLastAggregateTimestamp(ts: string): void {
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO sync_meta (key, value, updated_at) VALUES (?, ?, datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+  ).run("last_aggregate_at", ts);
+}
+
 // --- Calls ---
 
 export function upsertCall(call: {

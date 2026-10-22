@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { runAggregateAnalysis } from "@/lib/aggregate-analyzer";
-import { isSyncing } from "@/lib/db";
+import { isSyncing, setLastAggregateTimestamp } from "@/lib/db";
 import { requireAdmin } from "@/lib/admin-auth";
 
 export const runtime = "nodejs";
@@ -19,6 +19,7 @@ export async function POST(request: Request) {
   }
   try {
     await runAggregateAnalysis();
+    setLastAggregateTimestamp(new Date().toISOString());
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("[duro-tracks] Aggregate refresh failed:", error);
