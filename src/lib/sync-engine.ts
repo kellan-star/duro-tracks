@@ -8,6 +8,8 @@ import {
 import {
   getLastSyncTimestamp,
   setLastSyncTimestamp,
+  getLastAggregateTimestamp,
+  setLastAggregateTimestamp,
   callExists,
   upsertCall,
   upsertTranscript,
@@ -423,10 +425,23 @@ async function doSync(force: boolean): Promise<SyncResult> {
     }
   }
 
-  // Run aggregate analysis if any accounts were (re-)analyzed
+  // Run aggregate analysis (3 Sonnet calls over the whole book — the most
+  // expensive part of a sync) only if accounts changed AND it hasn't run
+  // recently. A forced/manual sync always refreshes it. Tune the interval with
+  // AGGREGATE_MIN_INTERVAL_DAYS (default 7); set 0 to disable the throttle.
   if (accountsAnalyzed > 0) {
-    updateProgress("Aggregate Analysis", "Generating cross-account insights...", 96);
-    await runAggregateAnalysis();
+    const minDays = Number(process.env.AGGREGATE_MIN_INTERVAL_DAYS ?? "7");
+    const last = getLastAggregateTimestamp();
+    const ageDays = last ? (Date.now() - new Date(last).getTime()) / 864e5 : Infinity;
+    if (force || minDays <= 0 || ageDays >= minDays) {
+      updateProgress("Aggregate Analysis", "Generating cross-account insights...", 96);
+      await runAggregateAnalysis();
+      setLastAggregateTimestamp(new Date().toISOString());
+    } else {
+      console.log(
+        `[duro-tracks] Skipping aggregate: ran ${ageDays.toFixed(1)}d ago (< ${minDays}d). Use ?force=1 or POST /api/aggregate to refresh.`
+      );
+    }
   }
 
   setLastSyncTimestamp(now.toISOString());
